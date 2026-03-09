@@ -4,8 +4,7 @@
 
 OpenAI API quickstart 가이드에 따라 API 사용환경 구성 및 사용예제 작성
 
-- [OpenAI API Developer quickstart
-](https://developers.openai.com/api/docs/quickstart)
+- [OpenAI API Developer quickstart](https://developers.openai.com/api/docs/quickstart)
 
 ### API Key 생성
 
@@ -148,7 +147,7 @@ print(response.output_text)
 ...
 ```
 
-#### Extend the model with toole
+#### Extend the model with tools
 
 tools 설정을 통해서 모델이 외부 데이터나 함수를 사용할 수 있도록 할 수 있다. built-in tools 인 웹 검색이나 파일 검색, 또는 직접 구현한 API 호출, 코드 실행 등등을 사용할 수 있다.
 
