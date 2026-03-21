@@ -305,3 +305,57 @@ CreateEmbeddingResponse(
     )
 )
 ```
+
+#### similarity
+
+코사인 유사도 방식으로 벡터 간의 유사도를 계산해본다.
+
+먼저 배열 연산을 위해 numpy 패키지를 설치한다.
+
+```shell
+pip install numpy
+```
+
+numpy 를 사용하여 두 벡터 간의 코사인 유사도를 계산하는 코드를 작성했다.
+
+```python
+import numpy as np
+
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+```
+
+여러 단어들의 벡터를 구하고 서로간의 코사인 유사도를 계산하여 단어들간의 유사도를 계산해보겠다.
+
+```python
+text = [
+    "apple",
+    "banana",
+    "yellow",
+    "iphone",
+]
+
+client = OpenAI()
+
+response = client.embeddings.create(
+    model="text-embedding-3-small",
+    input=text
+)
+
+embeddings = [d.embedding for d in response.data]
+
+for i, j in combinations(range(len(text)), 2):
+    similarity = cosine_similarity(embeddings[i], embeddings[j])
+    print(f"{text[i]}:{text[j]} > similarity={similarity}")
+```
+
+코드의 실행 결과는 아래와 같다.
+
+```text
+apple:banana > similarity=0.46358548480432327
+apple:yellow > similarity=0.3605400337614089
+apple:iphone > similarity=0.5849859334386475
+banana:yellow > similarity=0.28280421177123766
+banana:iphone > similarity=0.35388335994848097
+yellow:iphone > similarity=0.30231458709237263
+```
