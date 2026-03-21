@@ -1,0 +1,24 @@
+services:
+  backend:
+    image: ai-agent-backend
+    container_name: ai-agent-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    entrypoint: ["tail", "-f", "/dev/null"] # Dev
+  frontend:
+    image: ai-agent-frontend
+    container_name: ai-agent-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    entrypoint: ["tail", "-f", "/dev/null"] # Dev
