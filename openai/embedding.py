@@ -1,4 +1,6 @@
 from openai import OpenAI
+
+
 client = OpenAI()
 
 response = client.embeddings.create(
