@@ -259,3 +259,49 @@ if __name__ == "__main__":
 ¡Hola! Estoy muy bien, gracias. ¿Y tú, cómo estás?
 Hello World! How can I help you today?
 ```
+
+## Vector embeddings
+
+Vector embedding 관련 에제 및 실습
+
+### OpenAI Vector Embeddings
+
+OpenAI 의 Vector embedding 문서를 참고한 Embedding 예제
+
+- [Vector embeddings](https://developers.openai.com/api/docs/guides/embeddings)
+
+#### Embedding
+
+간단한 문장을 embedding 한 결과를 출력하는 예제이다.
+
+```python
+from openai import OpenAI
+client = OpenAI()
+
+response = client.embeddings.create(
+    input="Your text string goes here",
+    model="text-embedding-3-small"
+)
+
+print(response)
+```
+
+Embedding API 를 호출하면 embedding 결과로 CreateEmbeddingResponse 를 반환한다. 객체의 형식은 아래와 같다.
+
+```
+CreateEmbeddingResponse(
+    data=[
+        Embedding(
+            embedding=[0.005130767822265625, 0.0171966552734375, -0.0187225341796875, -0.0185546875, ...],
+            index=0,
+            object='embedding'
+        )
+    ],
+    model='text-embedding-3-small',
+    object='list',
+    usage=Usage(
+        prompt_tokens=5,
+        total_tokens=5
+    )
+)
+```
