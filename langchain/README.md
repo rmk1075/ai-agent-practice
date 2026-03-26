@@ -17,7 +17,7 @@ pip install dotenv openai chromadb
 chroma db collection 을 생성하고 Agent 관련 문서를 저장한다.
 
 ```python
-def init_chroma():
+def init_chroma_collection():
     documents = [
         "Agents combine language models with tools to create systems that can reason about tasks, decide which tools to use, and iteratively work towards solutions.",
         "An LLM Agent runs tools in a loop to achieve a goal.",
@@ -36,6 +36,8 @@ def init_chroma():
         ids=[f"doc_{i + 1}" for i in range(len(documents))],
         documents=documents
     )
+
+    return collection
 ```
 
 #### LLM agent
@@ -43,22 +45,12 @@ def init_chroma():
 ```python
 query = "AI Agent 에 대해서 설명해줘."
 
-client = OpenAI()
-
-# Retrieval
-embedding = client.embeddings.create(
-    model=EMBEDDING_MODEL,
-    input=query
-).data[0].embedding
-
-chroma = chromadb.Client()
-collection = chroma.get_collection(name=COLLECTION_NAME)
+collection = init_chroma_collection()
 results = collection.query(
-    query_embeddings=[embedding],
+    query_texts=[query],
     n_results=3
 )
 
-# Prompt 구성
 context = "\n".join(results["documents"][0])
 prompt = f"""
 Context:
@@ -70,7 +62,7 @@ Question:
 Answer:
 """
 
-# LLM 호출
+client = OpenAI()
 response = client.responses.create(
     model=LLM_MODEL,
     input=[
@@ -80,7 +72,6 @@ response = client.responses.create(
         }
     ]
 )
-
 print(response.output_text)
 ```
 
@@ -91,7 +82,7 @@ langchain 을 사용하여 LLM agent 를 개발한다.
 #### 패키지 설치
 
 ```shell
-pip install dotenv langchain-openai langchain-core
+pip install dotenv langchain-openai langchain-core langchain
 ```
 
 - https://docs.langchain.com/oss/python/langchain/knowledge-base
