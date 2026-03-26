@@ -1,9 +1,10 @@
-import chromadb
-
 from dotenv import load_dotenv
 from langchain_core.documents import Document
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
 from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 
 load_dotenv()
@@ -28,35 +29,33 @@ def init_vector_store():
     return vector_store
 
 
-# if __name__ == "__main__":
-#     vector_store = init_vector_store()
-    
-#     query = "AI Agent 에 대해서 설명해줘."
+if __name__ == "__main__":
+    query = "AI Agent 에 대해서 설명해줘."
 
-#     docs = vector_store.similarity_search(query=query, k=3)
-#     retriever = vector_store.as_retriever()
-#     llm = ChatOpenAI(model=LLM_MODEL)
-#     embedding = OpenAIEmbeddings(model=EMBEDDING_MODEL)
+    vector_store = init_vector_store()
+    retriever = vector_store.as_retriever()
 
-#     chroma = Chroma(
-#         collection_name=COLLECTION_NAME,
-#         embedding_function=embedding
-#     )
+    prompt = ChatPromptTemplate.from_template("""
+Context:
+{context}
 
-#     retriever = chroma.as_retriever()
+Question:
+{question}
 
-#     prompt = ChatPromptTemplate.from_template("""
-# Context:
-# {context}
+Answer:
+""")
 
-# Question:
-# {input}
+    def format_docs(docs):
+        return "\n".join(doc.page_content for doc in docs)
 
-# Answer:
-# """)
+    model = ChatOpenAI(model=LLM_MODEL)
 
-#     document_chain = create_stuff_documents_chain(llm, prompt)
-#     rag_chain = create_retrieval_chain(retriever, document_chain)
+    rag_chain = (
+        {'context': retriever | format_docs, 'question': RunnablePassthrough()}
+        | prompt
+        | model
+        | StrOutputParser()
+    )
 
-#     response = rag_chain.invoke({"input": query})
-#     print(response["answer"])
+    response = rag_chain.invoke(input=query)
+    print(response)
