@@ -2,13 +2,17 @@
 
 ## LangChain 예제
 
-### LangChain 설치
+### Without LangChain
+
+langchain 을 사용하지 않고 OpenAI SDK 과 Chroma DB 를 사용하여 간단한 LLM agent 를 개발한다.
+
+#### 패키지 설치
 
 ```shell
-pip install langchain langchain-openai langchain-chroma langchain-classic
+pip install dotenv openai chromadb
 ```
 
-### Chroma DB 초기화
+#### Chroma DB 초기화
 
 chroma db collection 을 생성하고 Agent 관련 문서를 저장한다.
 
@@ -34,6 +38,52 @@ def init_chroma():
     )
 ```
 
-### LangChain 사용하지 않는 코드
+#### LLM agent
 
-### LangChain 사용하는 코드
+```python
+query = "AI Agent 에 대해서 설명해줘."
+
+client = OpenAI()
+
+# Retrieval
+embedding = client.embeddings.create(
+    model=EMBEDDING_MODEL,
+    input=query
+).data[0].embedding
+
+chroma = chromadb.Client()
+collection = chroma.get_collection(name=COLLECTION_NAME)
+results = collection.query(
+    query_embeddings=[embedding],
+    n_results=3
+)
+
+# Prompt 구성
+context = "\n".join(results["documents"][0])
+prompt = f"""
+Context:
+{context}
+
+Question:
+{query}
+
+Answer:
+"""
+
+# LLM 호출
+response = client.responses.create(
+    model=LLM_MODEL,
+    input=[
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]
+)
+
+print(response.output_text)
+```
+
+### With LangChain
+
+langchain 을 사용하여 LLM agent 를 개발한다.
