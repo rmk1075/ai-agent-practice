@@ -87,3 +87,12 @@ print(response.output_text)
 ### With LangChain
 
 langchain 을 사용하여 LLM agent 를 개발한다.
+
+#### 패키지 설치
+
+```shell
+pip install dotenv langchain-openai langchain-core
+```
+
+- https://docs.langchain.com/oss/python/langchain/knowledge-base
+- https://docs.langchain.com/oss/python/langchain/rag
