@@ -148,3 +148,7 @@ rag_chain = (
 response = rag_chain.invoke(input=query)
 print(response)
 ```
+
+## LanChain LLM Chain
+
+[LanChain랭체인(LangChain) 입문부터 응용까지 [ver 1.0+]](https://wikidocs.net/book/14473)
