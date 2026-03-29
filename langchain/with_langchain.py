@@ -11,7 +11,6 @@ load_dotenv()
 
 LLM_MODEL = "gpt-5"
 EMBEDDING_MODEL = "text-embedding-3-small"
-COLLECTION_NAME = "langchain-collection"
 
 
 def init_vector_store():
