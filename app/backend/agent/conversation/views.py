@@ -64,3 +64,12 @@ class ConversationMessagesView(APIView):
         messages = Message.objects.filter(conversation_id=conversation_id).order_by('created_at')
         serializer = MessageSerializer(messages, many=True)
         return Response(serializer.data)
+
+    def post(self, request, conversation_id):
+        if not Conversation.objects.filter(id=conversation_id, is_deleted=False).exists():
+            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = MessageSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(conversation_id=conversation_id)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
