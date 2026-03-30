@@ -51,6 +51,11 @@ export async function createConversation(name: string): Promise<Conversation> {
   return res.json()
 }
 
+export async function deleteConversation(id: number): Promise<void> {
+  const res = await fetch(`${BASE_URL}/conversations/${id}/`, { method: "DELETE" })
+  if (!res.ok) throw new Error("Failed to delete conversation")
+}
+
 export async function createMessage(
   conversationId: number,
   role: Message["role"],
