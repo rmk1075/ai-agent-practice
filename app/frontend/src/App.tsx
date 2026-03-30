@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
-import { streamChat } from "./api/chat"
-import { fetchConversations, createConversation, fetchConversationDetail, fetchMessages, createMessage } from "./api/conversations"
+import { useEffect, useRef, useState } from "react"
+import { streamConversationMessage } from "./api/message"
+import { fetchConversations, createConversation, fetchConversationDetail, fetchMessages } from "./api/conversations"
 import type { Conversation, ConversationDetail, Message } from "./api/conversations"
 
 function App() {
@@ -8,6 +8,7 @@ function App() {
   const [selectedDetail, setSelectedDetail] = useState<ConversationDetail | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
+  const activeConvIdRef = useRef<number | null>(null)
 
   useEffect(() => {
     fetchConversations().then(setConversations).catch(console.error)
@@ -17,11 +18,13 @@ function App() {
     const name = `Conversation ${conversations.length + 1}`
     const created = await createConversation(name)
     setConversations((prev) => [created, ...prev])
+    activeConvIdRef.current = created.id
     setSelectedDetail({ ...created, metadata: [] })
     setMessages([])
   }
 
   const handleSelectConversation = async (conv: Conversation) => {
+    activeConvIdRef.current = conv.id
     const [detail, msgs] = await Promise.all([
       fetchConversationDetail(conv.id),
       fetchMessages(conv.id),
@@ -33,18 +36,28 @@ function App() {
   const sendMessage = async () => {
     if (!selectedDetail) return
     const content = input
+    const conversationId = selectedDetail.id
     setInput("")
 
-    const userMsg = await createMessage(selectedDetail.id, "user", content)
-    setMessages((prev) => [...prev, userMsg])
+    // 낙관적으로 유저 메시지 표시 (백엔드가 실제 저장)
+    if (activeConvIdRef.current === conversationId) {
+      setMessages((prev: Message[]) => [...prev, {
+        id: Date.now(),
+        role: "user",
+        content,
+        created_at: new Date().toISOString(),
+      }])
+    }
 
     let aiContent = ""
 
-    streamChat(content,
+    await streamConversationMessage(conversationId, content,
       (token) => {
-        aiContent += token
+        aiContent += token  // 항상 누적
 
-        setMessages((prev) => {
+        if (activeConvIdRef.current !== conversationId) return
+
+        setMessages((prev: Message[]) => {
           const copy = [...prev]
           const last = copy[copy.length - 1]
 
@@ -52,7 +65,7 @@ function App() {
             copy[copy.length - 1] = { ...last, content: aiContent }
           } else {
             copy.push({
-              id: Date.now(),
+              id: Date.now() + 1,
               role: "assistant",
               content: aiContent,
               created_at: new Date().toISOString(),
@@ -62,14 +75,7 @@ function App() {
           return copy
         })
       },
-      async () => {
-        const aiMsg = await createMessage(selectedDetail.id, "assistant", aiContent)
-        setMessages((prev: Message[]) => {
-          const copy = [...prev]
-          copy[copy.length - 1] = aiMsg
-          return copy
-        })
-      }
+      () => {}  // 백엔드가 AI 메시지 저장 처리
     )
   }
 
@@ -125,9 +131,9 @@ function App() {
         </div>
       </div>
 
-      {/* Main chat area */}
+      {/* Main conversation area */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 40 }}>
-        <h1 style={{ marginTop: 0 }}>AI Chat</h1>
+        <h1 style={{ marginTop: 0 }}>AI Conversation</h1>
 
         <div style={{ border: "1px solid gray", padding: 20, flex: 1, overflow: "auto", marginBottom: 16 }}>
           {selectedDetail === null ? (
