@@ -259,3 +259,297 @@ if __name__ == "__main__":
 ¡Hola! Estoy muy bien, gracias. ¿Y tú, cómo estás?
 Hello World! How can I help you today?
 ```
+
+## Vector embeddings
+
+Vector embedding 관련 에제 및 실습
+
+### OpenAI Vector Embeddings
+
+OpenAI 의 Vector embedding 문서를 참고한 Embedding 예제
+
+- [Vector embeddings](https://developers.openai.com/api/docs/guides/embeddings)
+
+#### Embedding
+
+간단한 문장을 embedding 한 결과를 출력하는 예제이다.
+
+```python
+from openai import OpenAI
+client = OpenAI()
+
+response = client.embeddings.create(
+    input="Your text string goes here",
+    model="text-embedding-3-small"
+)
+
+print(response)
+```
+
+Embedding API 를 호출하면 embedding 결과로 CreateEmbeddingResponse 를 반환한다. 객체의 형식은 아래와 같다.
+
+```
+CreateEmbeddingResponse(
+    data=[
+        Embedding(
+            embedding=[0.005130767822265625, 0.0171966552734375, -0.0187225341796875, -0.0185546875, ...],
+            index=0,
+            object='embedding'
+        )
+    ],
+    model='text-embedding-3-small',
+    object='list',
+    usage=Usage(
+        prompt_tokens=5,
+        total_tokens=5
+    )
+)
+```
+
+#### similarity
+
+코사인 유사도 방식으로 벡터 간의 유사도를 계산해본다.
+
+먼저 배열 연산을 위해 numpy 패키지를 설치한다.
+
+```shell
+pip install numpy
+```
+
+numpy 를 사용하여 두 벡터 간의 코사인 유사도를 계산하는 코드를 작성했다.
+
+```python
+import numpy as np
+
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+```
+
+여러 단어들의 벡터를 구하고 서로간의 코사인 유사도를 계산하여 단어들간의 유사도를 계산해보겠다.
+
+```python
+text = [
+    "apple",
+    "banana",
+    "yellow",
+    "iphone",
+]
+
+client = OpenAI()
+
+response = client.embeddings.create(
+    model="text-embedding-3-small",
+    input=text
+)
+
+embeddings = [d.embedding for d in response.data]
+
+for i, j in combinations(range(len(text)), 2):
+    similarity = cosine_similarity(embeddings[i], embeddings[j])
+    print(f"{text[i]}:{text[j]} > similarity={similarity}")
+```
+
+코드의 실행 결과는 아래와 같다.
+
+```text
+apple:banana > similarity=0.46358548480432327
+apple:yellow > similarity=0.3605400337614089
+apple:iphone > similarity=0.5849859334386475
+banana:yellow > similarity=0.28280421177123766
+banana:iphone > similarity=0.35388335994848097
+yellow:iphone > similarity=0.30231458709237263
+```
+
+### Vector DB - Chroma
+
+실제 서비스에서 의미 기반 검색을 사용하기 위해서는 임베딩 벡터를 저장하고 관리하는 툴이 필요하다. 이 때 사용되는 것이 벡터 DB 이다. 벡터 DB 는 기존 DB 와 다르게 다양한 비정형 데이터를 임베딩한 임베딩 벡터를 저장하며 의미 기반 검색을 제공해준다.
+
+이 예제에서는 여러 벡터 DB 중 Chroma 를 사용해서 예제를 작성한다.
+
+#### Choram 설치
+
+먼저 chromadb 패키지를 설치한다.
+
+```shell
+pip install chromadb
+```
+
+이 글의 예제에서는 물리적인 DB 를 사용하지 않고 in-memory DB 를 사용할 것이다. Chorma DB 에는 in-memory 저장을 사용하는 EphemeralClient 를 제공해준다.
+
+```python
+import chromadb
+
+client = chromadb.EphemeralClient()
+```
+
+#### Document 저장과 쿼리
+
+먼저 chromadb 클라이언트 객체를 생성하고 벡터를 저장할 collection 을 생성하겠다. embedding function 으로는 OpenAIEmbeddingFunction 을 사용하는데, 내부적오르 OPENAI_API_KEY 환경변수를 로드하여 사용하기 때문에 load_dotenv 를 통해 API KEY 가 저장된 .env 파일을 불러오도록 했다.
+
+클라이언트를 생성하고 `my_collection` 이라는 컬렉션을 생성했다. 이제 이 컬렉션에 데이터를 저장하고 쿼리를 수행할 것이다.
+
+```python
+from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+from dotenv import load_dotenv
+
+import chromadb
+
+
+load_dotenv()
+
+EMBEDDING_MODEL = "text-embedding-3-small"
+
+embedding_function = OpenAIEmbeddingFunction(model_name=EMBEDDING_MODEL)
+
+# in-memory client
+client = chromadb.EphemeralClient()
+
+collection = client.create_collection(
+    name="my_collection",
+    embedding_function=embedding_function
+)
+```
+
+위 코드에서 만든 컬렉션에 여러 문장들을 저장할 것이다. documents 에는 ChatGPT 로 생성한 아무 문장들이 들어가있다. 이렇게 여러 문장들을 저장하고 여러 쿼리에 대한 답변들을 추출해보겠다.
+
+```python
+# add documents
+documents = [
+    "FastAPI is a modern Python web framework for building APIs with high performance.",
+    "Kubernetes is used to orchestrate containerized applications at scale.",
+    "Grilling steak requires high heat and proper seasoning for best flavor.",
+    "A balanced diet includes vegetables, proteins, and healthy fats.",
+    "Squats and deadlifts are essential exercises for building lower body strength."
+]
+
+ids = [f"doc_{i}" for i in range(len(documents))]
+
+collection.add(
+    ids=ids,
+    documents=documents
+)
+```
+
+여러 데이터를 저장하고 이제 쿼리를 실행해보겠다. 4가지 서로 다른 질문들을 쿼리하고, 답변으로 문장을 2개씩 출력하도록 헀다. 결과를 확인해서 출력된 답변들이 문맥에 맞는지 보겠다.
+
+```python
+# query
+queries = [
+    "How to build scalable backend systems?",
+    "What should I eat to stay healthy?",
+    "Best way to cook meat with fire",
+    "Exercises for strong legs"
+]
+
+for query in queries:
+    result = collection.query(
+        query_texts=[query],
+        n_results=2 # query 마다 2개의 답변을 반환
+    )
+
+    print(f"[Query] {query}")
+    for i, document in enumerate(result["documents"][0]):
+        print(f"    -> Result {i + 1}: {document}")
+```
+
+코드를 수행하면 아래와 같이 결과가 출력된다.
+
+scalable backend system 에 대한 질문에는 Kubernetes 와 FastAPI 같은 백엔드 기술들의 문장이 출력되었다. 건강한 식단 관련해서도 균형잡힌 식단에 대한 답변이 출력되었다. 고기를 잘 굽는 방법에 대해서는 스테이크 굽기에 대한 문장이, 튼튼한 하체를 위한 운동에 대한 질문에는 스쿼트와 데드리프트에 대한 답변이 출력되었다. 이를 통해서 단순 단어 비교가 아닌 문맥, 의미를 기반으로 답변이 출력된 것을 확인할 수 있다.
+
+```text
+[Query] How to build scalable backend systems?
+    -> Result 1: Kubernetes is used to orchestrate containerized applications at scale.
+    -> Result 2: FastAPI is a modern Python web framework for building APIs with high performance.
+[Query] What should I eat to stay healthy?
+    -> Result 1: A balanced diet includes vegetables, proteins, and healthy fats.
+    -> Result 2: Squats and deadlifts are essential exercises for building lower body strength.
+[Query] Best way to cook meat with fire
+    -> Result 1: Grilling steak requires high heat and proper seasoning for best flavor.
+    -> Result 2: A balanced diet includes vegetables, proteins, and healthy fats.
+[Query] Exercises for strong legs
+    -> Result 1: Squats and deadlifts are essential exercises for building lower body strength.
+    -> Result 2: A balanced diet includes vegetables, proteins, and healthy fats.
+```
+
+## RAG (Retrieval-Augmented Generation)
+
+OpenAI API 와 Chroma DB 를 이용한 RAG 예제
+
+### Vector DB 초기화
+
+chroma db 클라이언트, 컬렉션 생성
+
+```python
+# vector db 초기화
+chroma_client = chromadb.Client()
+embedding_function = OpenAIEmbeddingFunction(model_name=EMBEDDING_MODEL)
+collection = chroma_client.create_collection(
+    name=COLLECTION_NAME,
+    embedding_function=embedding_function
+)
+```
+
+### 문서 저장
+
+vector db 에 이후 rag 로 사용할 문저 정보들을 저장한다. 
+
+```python
+# 문서 저장
+documents = [
+    "AcmeDB is a distributed database optimized for write-heavy workloads. It uses LSM-tree and supports horizontal scaling."
+]
+collection.add(
+    documents=documents,
+    ids=["1"]
+)
+```
+
+### 문서 조회
+
+조회하려는 query 와 유사한 문서 결과를 vector db 에서 조회한다.
+
+```python
+# 관련 문서 조회
+results = collection.query(
+    query_texts=[QUERY],
+    n_results=1
+)
+documents = results["documents"][0]
+```
+
+### 프롬프트 생성
+
+조회된 문서와 쿼리를 가지고 LLM 에 질의할 프롬프트를 구성한다.
+
+```python
+# prompt 생성
+context = "\n".join(documents)
+
+prompt = f"""
+Answer based only on the context below.
+
+Context:
+{context}
+
+Question:
+{QUERY}
+"""
+```
+
+### LLM 호출
+
+LLM 을 호출하여 사용자 쿼리와 이와 관련된 문서를 조회하여 작성한 프롬프트에 대한 응답을 받는다.
+
+```python
+client = OpenAI()
+
+response = client.responses.create(
+    model=LLM_MODEL,
+    input=[
+        {"role": "user", "content": prompt}
+    ]
+)
+
+print("\n=== With RAG ===")
+print(response.output_text)
+```
