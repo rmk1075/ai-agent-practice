@@ -1,3 +1,7 @@
+import random
+import time
+
+from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -57,6 +61,18 @@ class ConversationDetailView(APIView):
 
 class ConversationMessagesView(APIView):
 
+    def _fake_agent_stream(self, message: str):
+        text = f"AI response to: {message}"
+
+        for token in text.split(" "):
+            time.sleep(0.3)
+            yield token + " "
+
+        for i in range(random.randint(0, 10)):
+            time.sleep(0.3)
+            yield str(i) + " "
+
+
     def get(self, request, conversation_id):
         if not Conversation.objects.filter(id=conversation_id, is_deleted=False).exists():
             return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
@@ -71,5 +87,19 @@ class ConversationMessagesView(APIView):
 
         serializer = MessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(conversation_id=conversation_id)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        user_message = serializer.save(conversation_id=conversation_id)
+
+        def event_stream():
+            ai_content = ""
+            for token in self._fake_agent_stream(user_message.content):
+                ai_content += token
+                yield f"data: {token}\n\n".encode()
+
+            Message.objects.create(
+                conversation_id=conversation_id,
+                role='assistant',
+                content=ai_content.strip(),
+            )
+            yield b"data: [DONE]\n\n"
+
+        return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
