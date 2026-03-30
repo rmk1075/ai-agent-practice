@@ -2,8 +2,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from conversation.models import Conversation
-from conversation.serializers import ConversationDetailSerializer, ConversationSerializer
+from conversation.models import Conversation, Message
+from conversation.serializers import ConversationDetailSerializer, ConversationSerializer, MessageSerializer
 
 
 class ConversationView(APIView):
@@ -53,3 +53,14 @@ class ConversationDetailView(APIView):
 
         conversation.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ConversationMessagesView(APIView):
+
+    def get(self, request, conversation_id):
+        if not Conversation.objects.filter(id=conversation_id, is_deleted=False).exists():
+            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        messages = Message.objects.filter(conversation_id=conversation_id).order_by('created_at')
+        serializer = MessageSerializer(messages, many=True)
+        return Response(serializer.data)
