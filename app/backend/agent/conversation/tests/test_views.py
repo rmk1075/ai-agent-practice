@@ -165,3 +165,39 @@ class ConversationMessagesViewTest(TestCase):
         self.conversation.delete()
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 404)
+
+    def test_post_message(self):
+        response = self.client.post(self.url, {'role': 'user', 'content': 'hello'}, format='json')
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data['role'], 'user')
+        self.assertEqual(data['content'], 'hello')
+        self.assertIn('id', data)
+        self.assertIn('created_at', data)
+        self.assertTrue(Message.objects.filter(id=data['id'], conversation=self.conversation).exists())
+
+    def test_post_message_assistant_role(self):
+        response = self.client.post(self.url, {'role': 'assistant', 'content': 'hi'}, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['role'], 'assistant')
+
+    def test_post_message_missing_role(self):
+        response = self.client.post(self.url, {'content': 'hello'}, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_post_message_missing_content(self):
+        response = self.client.post(self.url, {'role': 'user'}, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_post_message_invalid_role(self):
+        response = self.client.post(self.url, {'role': 'invalid', 'content': 'hello'}, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_post_message_conversation_not_found(self):
+        response = self.client.post('/conversations/9999/messages/', {'role': 'user', 'content': 'hello'}, format='json')
+        self.assertEqual(response.status_code, 404)
+
+    def test_post_message_conversation_deleted(self):
+        self.conversation.delete()
+        response = self.client.post(self.url, {'role': 'user', 'content': 'hello'}, format='json')
+        self.assertEqual(response.status_code, 404)
