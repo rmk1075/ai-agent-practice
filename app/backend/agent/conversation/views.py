@@ -68,7 +68,7 @@ class ConversationMessagesView(APIView):
             time.sleep(0.3)
             yield token + " "
 
-        for i in range(random.randint(0, 10)):
+        for i in range(random.randint(10, 20)):
             time.sleep(0.3)
             yield str(i) + " "
 
