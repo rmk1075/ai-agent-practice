@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { streamChat } from "./api/chat"
-import { fetchConversations, createConversation, fetchConversationDetail, fetchMessages } from "./api/conversations"
+import { fetchConversations, createConversation, fetchConversationDetail, fetchMessages, createMessage } from "./api/conversations"
 import type { Conversation, ConversationDetail, Message } from "./api/conversations"
 
 function App() {
@@ -30,18 +30,17 @@ function App() {
     setMessages(msgs)
   }
 
-  const sendMessage = () => {
-    const userMsg: Message = {
-      id: Date.now(),
-      role: "user",
-      content: input,
-      created_at: new Date().toISOString(),
-    }
+  const sendMessage = async () => {
+    if (!selectedDetail) return
+    const content = input
+    setInput("")
+
+    const userMsg = await createMessage(selectedDetail.id, "user", content)
     setMessages((prev) => [...prev, userMsg])
 
     let aiContent = ""
 
-    streamChat(input,
+    streamChat(content,
       (token) => {
         aiContent += token
 
@@ -53,7 +52,7 @@ function App() {
             copy[copy.length - 1] = { ...last, content: aiContent }
           } else {
             copy.push({
-              id: Date.now() + 1,
+              id: Date.now(),
               role: "assistant",
               content: aiContent,
               created_at: new Date().toISOString(),
@@ -63,10 +62,15 @@ function App() {
           return copy
         })
       },
-      () => {}
+      async () => {
+        const aiMsg = await createMessage(selectedDetail.id, "assistant", aiContent)
+        setMessages((prev: Message[]) => {
+          const copy = [...prev]
+          copy[copy.length - 1] = aiMsg
+          return copy
+        })
+      }
     )
-
-    setInput("")
   }
 
   return (

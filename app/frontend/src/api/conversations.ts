@@ -50,3 +50,17 @@ export async function createConversation(name: string): Promise<Conversation> {
   if (!res.ok) throw new Error("Failed to create conversation")
   return res.json()
 }
+
+export async function createMessage(
+  conversationId: number,
+  role: Message["role"],
+  content: string
+): Promise<Message> {
+  const res = await fetch(`${BASE_URL}/conversations/${conversationId}/messages/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, content }),
+  })
+  if (!res.ok) throw new Error("Failed to create message")
+  return res.json()
+}
