@@ -1,4 +1,4 @@
-from conversation.models import Conversation, ConversationMetadata
+from conversation.models import Conversation, ConversationMetadata, Message
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -101,4 +101,67 @@ class ConversationDetailViewTest(TestCase):
 
     def test_delete_conversation_not_found(self):
         response = self.client.delete('/conversations/9999/')
+        self.assertEqual(response.status_code, 404)
+
+
+class ConversationMessagesViewTest(TestCase):
+
+    def setUp(self):
+        self.client = APIClient()
+        self.conversation = Conversation.objects.create(name='test conv')
+        self.url = f'/conversations/{self.conversation.id}/messages/'
+
+    def test_get_messages_empty(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+
+    def test_get_messages(self):
+        msg1 = Message.objects.create(conversation=self.conversation, role='user', content='hello')
+        msg2 = Message.objects.create(conversation=self.conversation, role='assistant', content='hi')
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 2)
+        self.assertTrue(any(m['id'] == msg1.pk for m in data))
+        self.assertTrue(any(m['id'] == msg2.pk for m in data))
+
+    def test_get_messages_returns_correct_fields(self):
+        Message.objects.create(conversation=self.conversation, role='user', content='hello')
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        msg = response.json()[0]
+        self.assertIn('id', msg)
+        self.assertIn('role', msg)
+        self.assertIn('content', msg)
+        self.assertIn('created_at', msg)
+
+    def test_get_messages_ordered_by_created_at(self):
+        msg1 = Message.objects.create(conversation=self.conversation, role='user', content='first')
+        msg2 = Message.objects.create(conversation=self.conversation, role='assistant', content='second')
+
+        response = self.client.get(self.url)
+        data = response.json()
+        self.assertEqual(data[0]['id'], msg1.pk)
+        self.assertEqual(data[1]['id'], msg2.pk)
+
+    def test_get_messages_only_from_target_conversation(self):
+        other_conv = Conversation.objects.create(name='other conv')
+        Message.objects.create(conversation=self.conversation, role='user', content='mine')
+        Message.objects.create(conversation=other_conv, role='user', content='not mine')
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(response.json()[0]['content'], 'mine')
+
+    def test_get_messages_conversation_not_found(self):
+        response = self.client.get('/conversations/9999/messages/')
+        self.assertEqual(response.status_code, 404)
+
+    def test_get_messages_conversation_deleted(self):
+        self.conversation.delete()
+        response = self.client.get(self.url)
         self.assertEqual(response.status_code, 404)
