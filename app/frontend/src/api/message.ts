@@ -16,20 +16,29 @@ export async function streamConversationMessage(
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
+  let buffer = ""
 
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
 
-    const chunk = decoder.decode(value, { stream: true })
-    for (const line of chunk.split("\n")) {
-      if (!line.startsWith("data: ")) continue
-      const data = line.slice(6)
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      // \r 만 제거 (CRLF 대응). trim()은 토큰 내 trailing space까지 제거하므로 사용 안 함
+      const cleanLine = line.endsWith("\r") ? line.slice(0, -1) : line
+
+      if (!cleanLine.startsWith("data: ")) continue
+
+      const data = cleanLine.slice(6)
       if (data === "[DONE]") {
         onDone()
         return
       }
-      onToken(data)
+
+      if (data) onToken(data)
     }
   }
 }
