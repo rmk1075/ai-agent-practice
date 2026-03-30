@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type MouseEvent } from "react"
 import { streamConversationMessage } from "./api/message"
-import { fetchConversations, createConversation, fetchConversationDetail, fetchMessages } from "./api/conversations"
+import { fetchConversations, createConversation, fetchConversationDetail, fetchMessages, deleteConversation } from "./api/conversations"
 import type { Conversation, ConversationDetail, Message } from "./api/conversations"
 
 function App() {
@@ -21,6 +21,17 @@ function App() {
     activeConvIdRef.current = created.id
     setSelectedDetail({ ...created, metadata: [] })
     setMessages([])
+  }
+
+  const handleDeleteConversation = async (e: MouseEvent, convId: number) => {
+    e.stopPropagation()
+    await deleteConversation(convId)
+    setConversations((prev) => prev.filter((c: Conversation) => c.id !== convId))
+    if (activeConvIdRef.current === convId) {
+      activeConvIdRef.current = null
+      setSelectedDetail(null)
+      setMessages([])
+    }
   }
 
   const handleSelectConversation = async (conv: Conversation) => {
@@ -114,18 +125,35 @@ function App() {
               key={conv.id}
               onClick={() => handleSelectConversation(conv)}
               style={{
+                display: "flex",
+                alignItems: "center",
                 padding: "10px 14px",
                 cursor: "pointer",
                 background: selectedDetail?.id === conv.id ? "#e0e0e0" : "transparent",
                 borderRadius: 6,
                 margin: "2px 8px",
                 fontSize: 14,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
               }}
             >
-              {conv.name}
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {conv.name}
+              </span>
+              <button
+                onClick={(e) => handleDeleteConversation(e, conv.id)}
+                style={{
+                  flexShrink: 0,
+                  marginLeft: 6,
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#999",
+                  fontSize: 16,
+                  lineHeight: 1,
+                  padding: "0 2px",
+                }}
+              >
+                ×
+              </button>
             </div>
           ))}
         </div>
