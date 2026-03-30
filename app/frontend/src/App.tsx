@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react"
 import { streamChat } from "./api/chat"
-import { fetchConversations, createConversation } from "./api/conversations"
-import type { Conversation } from "./api/conversations"
+import { fetchConversations, createConversation, fetchConversationDetail, fetchMessages } from "./api/conversations"
+import type { Conversation, ConversationDetail, Message } from "./api/conversations"
 
 function App() {
   const [conversations, setConversations] = useState<Conversation[]>([])
-  const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [messages, setMessages] = useState<string[]>([])
+  const [selectedDetail, setSelectedDetail] = useState<ConversationDetail | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
 
   useEffect(() => {
@@ -17,31 +17,47 @@ function App() {
     const name = `Conversation ${conversations.length + 1}`
     const created = await createConversation(name)
     setConversations((prev) => [created, ...prev])
-    setSelectedId(created.id)
+    setSelectedDetail({ ...created, metadata: [] })
     setMessages([])
   }
 
-  const handleSelectConversation = (conv: Conversation) => {
-    setSelectedId(conv.id)
-    setMessages([])
+  const handleSelectConversation = async (conv: Conversation) => {
+    const [detail, msgs] = await Promise.all([
+      fetchConversationDetail(conv.id),
+      fetchMessages(conv.id),
+    ])
+    setSelectedDetail(detail)
+    setMessages(msgs)
   }
 
   const sendMessage = () => {
-    setMessages((prev) => [...prev, "User: " + input])
+    const userMsg: Message = {
+      id: Date.now(),
+      role: "user",
+      content: input,
+      created_at: new Date().toISOString(),
+    }
+    setMessages((prev) => [...prev, userMsg])
 
-    let aiMessage = ""
+    let aiContent = ""
 
     streamChat(input,
       (token) => {
-        aiMessage += token
+        aiContent += token
 
         setMessages((prev) => {
           const copy = [...prev]
+          const last = copy[copy.length - 1]
 
-          if (copy[copy.length - 1]?.startsWith("AI:")) {
-            copy[copy.length - 1] = "AI: " + aiMessage
+          if (last?.role === "assistant") {
+            copy[copy.length - 1] = { ...last, content: aiContent }
           } else {
-            copy.push("AI: " + aiMessage)
+            copy.push({
+              id: Date.now() + 1,
+              role: "assistant",
+              content: aiContent,
+              created_at: new Date().toISOString(),
+            })
           }
 
           return copy
@@ -90,7 +106,7 @@ function App() {
               style={{
                 padding: "10px 14px",
                 cursor: "pointer",
-                background: selectedId === conv.id ? "#e0e0e0" : "transparent",
+                background: selectedDetail?.id === conv.id ? "#e0e0e0" : "transparent",
                 borderRadius: 6,
                 margin: "2px 8px",
                 fontSize: 14,
@@ -110,13 +126,15 @@ function App() {
         <h1 style={{ marginTop: 0 }}>AI Chat</h1>
 
         <div style={{ border: "1px solid gray", padding: 20, flex: 1, overflow: "auto", marginBottom: 16 }}>
-          {selectedId === null ? (
+          {selectedDetail === null ? (
             <div style={{ color: "#aaa" }}>대화를 선택하거나 새로 만들어 주세요.</div>
           ) : messages.length === 0 ? (
             <div style={{ color: "#aaa" }}>메시지를 입력해 주세요.</div>
           ) : (
-            messages.map((m, i) => (
-              <div key={i}>{m}</div>
+            messages.map((m) => (
+              <div key={m.id} style={{ marginBottom: 8 }}>
+                <strong>{m.role === "user" ? "User" : "AI"}:</strong> {m.content}
+              </div>
             ))
           )}
         </div>
@@ -126,12 +144,12 @@ function App() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-            disabled={selectedId === null}
+            disabled={selectedDetail === null}
             style={{ flex: 1, padding: "8px 12px", fontSize: 14 }}
           />
           <button
             onClick={sendMessage}
-            disabled={selectedId === null}
+            disabled={selectedDetail === null}
             style={{ padding: "8px 16px" }}
           >
             Send
