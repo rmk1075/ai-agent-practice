@@ -8,16 +8,11 @@ class OpenAIClient:
     def __init__(self):
         self._client = OpenAI()
 
-    def stream(self, message: str) -> Generator[str, Any, Any]:
+    def stream(self, messages: list[dict]) -> Generator[str, Any, Any]:
         for response in self._client.responses.create(
-                model="gpt-4o-mini",
-                stream=True,
-                input=[
-                    {
-                        "role": "user",
-                        "content": message
-                    }
-                ]
-            ):
-            if type(response) == ResponseTextDeltaEvent:
+            model="gpt-4o-mini",
+            stream=True,
+            input=messages,
+        ):
+            if isinstance(response, ResponseTextDeltaEvent):
                 yield response.delta
