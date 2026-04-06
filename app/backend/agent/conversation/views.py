@@ -8,7 +8,10 @@ from rest_framework.views import APIView
 
 from conversation.models import Conversation, Message
 from conversation.serializers import ConversationDetailSerializer, ConversationSerializer, MessageSerializer
+from conversation.service import OpenAIClient
 
+
+openai_client = OpenAIClient()
 
 class ConversationView(APIView):
 
@@ -91,9 +94,9 @@ class ConversationMessagesView(APIView):
 
         def event_stream():
             ai_content = ""
-            for token in self._fake_agent_stream(user_message.content):
-                ai_content += token
-                yield f"data: {token}\n\n".encode()
+            for delta in openai_client.stream(user_message.content):
+                ai_content += delta
+                yield f"data: {delta}\n\n".encode()
 
             Message.objects.create(
                 conversation_id=conversation_id,
