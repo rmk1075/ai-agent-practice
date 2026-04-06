@@ -2,13 +2,14 @@ from typing import Any, Generator
 
 from openai import OpenAI
 from openai.types.responses import ResponseTextDeltaEvent
+from openai.types.responses.easy_input_message_param import EasyInputMessageParam
 
 
 class OpenAIClient:
     def __init__(self):
         self._client = OpenAI()
 
-    def stream(self, messages: list[dict]) -> Generator[str, Any, Any]:
+    def stream(self, messages: list[EasyInputMessageParam]) -> Generator[str, Any, Any]:
         for response in self._client.responses.create(
             model="gpt-4o-mini",
             stream=True,
