@@ -7,7 +7,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from openai.types.responses.easy_input_message_param import EasyInputMessageParam
+from openai.types.responses import ResponseInputParam
 
 from conversation.models import Conversation, Message
 from conversation.serializers import ConversationDetailSerializer, ConversationSerializer, MessageSerializer
@@ -106,7 +106,7 @@ class ConversationMessagesView(APIView):
             .order_by('-created_at')[:HISTORY_LIMIT]
         )[::-1]
 
-        messages: list[EasyInputMessageParam] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages: ResponseInputParam = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages += [{"role": m.role, "content": m.content} for m in history]
         messages.append({"role": "user", "content": user_message.content})
 
