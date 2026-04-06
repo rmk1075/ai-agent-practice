@@ -7,6 +7,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from typing import cast
+
 from openai.types.responses import ResponseInputParam
 
 from conversation.models import Conversation, Message
@@ -106,9 +108,11 @@ class ConversationMessagesView(APIView):
             .order_by('-created_at')[:HISTORY_LIMIT]
         )[::-1]
 
-        messages: ResponseInputParam = [{"role": "system", "content": SYSTEM_PROMPT}]
-        messages += [{"role": m.role, "content": m.content} for m in history]
-        messages.append({"role": "user", "content": user_message.content})
+        messages = cast(ResponseInputParam, [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            *[{"role": m.role, "content": m.content} for m in history],
+            {"role": "user", "content": user_message.content},
+        ])
 
         def event_stream():
             ai_content = ""
