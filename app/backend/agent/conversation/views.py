@@ -1,3 +1,4 @@
+import os
 import random
 import time
 
@@ -12,6 +13,10 @@ from conversation.service import OpenAIClient
 
 
 openai_client = OpenAIClient()
+
+SYSTEM_PROMPT = "You are a helpful assistant."
+HISTORY_LIMIT = int(os.environ.get("CONVERSATION_HISTORY_LIMIT", 20))
+
 
 class ConversationView(APIView):
 
@@ -92,9 +97,20 @@ class ConversationMessagesView(APIView):
         serializer.is_valid(raise_exception=True)
         user_message = serializer.save(conversation_id=conversation_id)
 
+        # 최근 HISTORY_LIMIT개를 역순으로 가져온 뒤 시간순으로 되돌림
+        history = list(
+            Message.objects.filter(conversation_id=conversation_id)
+            .exclude(id=user_message.id)
+            .order_by('-created_at')[:HISTORY_LIMIT]
+        )[::-1]
+
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages += [{"role": m.role, "content": m.content} for m in history]
+        messages.append({"role": "user", "content": user_message.content})
+
         def event_stream():
             ai_content = ""
-            for delta in openai_client.stream(user_message.content):
+            for delta in openai_client.stream(messages):
                 ai_content += delta
                 yield f"data: {delta}\n\n".encode()
 

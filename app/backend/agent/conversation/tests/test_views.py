@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from conversation.models import Conversation, ConversationMetadata, Message
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -166,20 +168,20 @@ class ConversationMessagesViewTest(TestCase):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 404)
 
-    def test_post_message(self):
+    @patch('conversation.views.openai_client')
+    def test_post_message(self, mock_client):
+        mock_client.stream.return_value = iter([])
         response = self.client.post(self.url, {'role': 'user', 'content': 'hello'}, format='json')
-        self.assertEqual(response.status_code, 201)
-        data = response.json()
-        self.assertEqual(data['role'], 'user')
-        self.assertEqual(data['content'], 'hello')
-        self.assertIn('id', data)
-        self.assertIn('created_at', data)
-        self.assertTrue(Message.objects.filter(id=data['id'], conversation=self.conversation).exists())
+        self.assertEqual(response.status_code, 200)
+        b''.join(response.streaming_content)
+        self.assertTrue(Message.objects.filter(role='user', content='hello', conversation=self.conversation).exists())
 
-    def test_post_message_assistant_role(self):
+    @patch('conversation.views.openai_client')
+    def test_post_message_assistant_role(self, mock_client):
+        mock_client.stream.return_value = iter([])
         response = self.client.post(self.url, {'role': 'assistant', 'content': 'hi'}, format='json')
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()['role'], 'assistant')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Message.objects.filter(role='assistant', content='hi', conversation=self.conversation).exists())
 
     def test_post_message_missing_role(self):
         response = self.client.post(self.url, {'content': 'hello'}, format='json')
@@ -201,3 +203,57 @@ class ConversationMessagesViewTest(TestCase):
         self.conversation.delete()
         response = self.client.post(self.url, {'role': 'user', 'content': 'hello'}, format='json')
         self.assertEqual(response.status_code, 404)
+
+    @patch('conversation.views.openai_client')
+    def test_post_message_includes_system_prompt_in_stream(self, mock_client):
+        mock_client.stream.return_value = iter([])
+
+        response = self.client.post(self.url, {'role': 'user', 'content': 'hello'}, format='json')
+        b''.join(response.streaming_content)
+
+        call_args = mock_client.stream.call_args[0][0]
+        self.assertEqual(call_args[0]['role'], 'system')
+        self.assertTrue(len(call_args[0]['content']) > 0)
+
+    @patch('conversation.views.openai_client')
+    def test_post_message_includes_history_in_stream(self, mock_client):
+        mock_client.stream.return_value = iter([])
+
+        Message.objects.create(conversation=self.conversation, role='user', content='first msg')
+        Message.objects.create(conversation=self.conversation, role='assistant', content='first reply')
+
+        response = self.client.post(self.url, {'role': 'user', 'content': 'second msg'}, format='json')
+        b''.join(response.streaming_content)
+
+        call_args = mock_client.stream.call_args[0][0]
+        contents = [m['content'] for m in call_args]
+        self.assertIn('first msg', contents)
+        self.assertIn('first reply', contents)
+        self.assertEqual(call_args[-1], {'role': 'user', 'content': 'second msg'})
+
+    @patch('conversation.views.HISTORY_LIMIT', 2)
+    @patch('conversation.views.openai_client')
+    def test_post_message_respects_history_limit(self, mock_client):
+        mock_client.stream.return_value = iter([])
+
+        for i in range(5):
+            Message.objects.create(conversation=self.conversation, role='user', content=f'msg {i}')
+
+        response = self.client.post(self.url, {'role': 'user', 'content': 'new msg'}, format='json')
+        b''.join(response.streaming_content)
+
+        call_args = mock_client.stream.call_args[0][0]
+        # system(1) + history(2) + current(1) = 4
+        self.assertEqual(len(call_args), 4)
+
+    @patch('conversation.views.openai_client')
+    def test_post_message_current_user_message_not_duplicated_in_history(self, mock_client):
+        mock_client.stream.return_value = iter([])
+
+        response = self.client.post(self.url, {'role': 'user', 'content': 'my message'}, format='json')
+        b''.join(response.streaming_content)
+
+        call_args = mock_client.stream.call_args[0][0]
+        occurrences = [m for m in call_args if m.get('content') == 'my message']
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(call_args[-1]['content'], 'my message')
