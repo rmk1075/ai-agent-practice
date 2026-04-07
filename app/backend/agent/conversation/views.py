@@ -1,6 +1,4 @@
 import os
-import random
-import time
 
 from django.http import StreamingHttpResponse
 from rest_framework import status
@@ -73,34 +71,10 @@ class ConversationDetailView(APIView):
 
 class ConversationMessagesView(APIView):
 
-    def _fake_agent_stream(self, message: str):
-        text = f"AI response to: {message}"
+    def _conversation_exists(self, conversation_id) -> bool:
+        return Conversation.objects.filter(id=conversation_id, is_deleted=False).exists()
 
-        for token in text.split(" "):
-            time.sleep(0.3)
-            yield token + " "
-
-        for i in range(random.randint(10, 20)):
-            time.sleep(0.3)
-            yield str(i) + " "
-
-
-    def get(self, request, conversation_id):
-        if not Conversation.objects.filter(id=conversation_id, is_deleted=False).exists():
-            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        messages = Message.objects.filter(conversation_id=conversation_id).order_by('created_at')
-        serializer = MessageSerializer(messages, many=True)
-        return Response(serializer.data)
-
-    def post(self, request, conversation_id):
-        if not Conversation.objects.filter(id=conversation_id, is_deleted=False).exists():
-            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        serializer = MessageSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user_message = serializer.save(conversation_id=conversation_id)
-
+    def _build_messages(self, conversation_id, user_message) -> ResponseInputParam:
         # 최근 HISTORY_LIMIT개를 역순으로 가져온 뒤 시간순으로 되돌림
         history = list(
             Message.objects.filter(conversation_id=conversation_id)
@@ -108,23 +82,40 @@ class ConversationMessagesView(APIView):
             .order_by('-created_at')[:HISTORY_LIMIT]
         )[::-1]
 
-        messages = cast(ResponseInputParam, [
+        return cast(ResponseInputParam, [
             {"role": "system", "content": SYSTEM_PROMPT},
             *[{"role": m.role, "content": m.content} for m in history],
             {"role": "user", "content": user_message.content},
         ])
 
-        def event_stream():
-            ai_content = ""
-            for delta in openai_client.stream(messages):
-                ai_content += delta
-                yield f"data: {delta}\n\n".encode()
+    def _stream_response(self, conversation_id, messages):
+        ai_content = ""
+        for delta in openai_client.stream(messages):
+            ai_content += delta
+            yield f"data: {delta}\n\n".encode()
 
-            Message.objects.create(
-                conversation_id=conversation_id,
-                role='assistant',
-                content=ai_content.strip(),
-            )
-            yield b"data: [DONE]\n\n"
+        Message.objects.create(
+            conversation_id=conversation_id,
+            role='assistant',
+            content=ai_content.strip(),
+        )
+        yield b"data: [DONE]\n\n"
 
-        return StreamingHttpResponse(event_stream(), content_type="text/event-stream")
+    def get(self, request, conversation_id):
+        if not self._conversation_exists(conversation_id):
+            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        messages = Message.objects.filter(conversation_id=conversation_id).order_by('created_at')
+        serializer = MessageSerializer(messages, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, conversation_id):
+        if not self._conversation_exists(conversation_id):
+            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = MessageSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user_message = serializer.save(conversation_id=conversation_id)
+
+        messages = self._build_messages(conversation_id, user_message)
+        return StreamingHttpResponse(self._stream_response(conversation_id, messages), content_type="text/event-stream")
