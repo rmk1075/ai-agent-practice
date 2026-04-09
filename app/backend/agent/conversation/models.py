@@ -5,6 +5,9 @@ from agent.models import BaseModel
 
 class Conversation(BaseModel):
     name = models.CharField(max_length=255)
+    system_prompt = models.TextField(default="You are a helpful assistant.")
+    model = models.CharField(max_length=100, default="gpt-4o-mini")
+    temperature = models.FloatField(default=0.7)
 
 
 class ConversationMetadata(BaseModel):
