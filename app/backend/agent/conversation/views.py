@@ -5,18 +5,10 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from typing import cast
-
-from openai.types.responses import ResponseInputParam
-
 from conversation.models import Conversation, Message
 from conversation.serializers import ConversationDetailSerializer, ConversationSerializer, MessageSerializer
-from conversation.service import OpenAIClient
+from conversation.service import ConversationGraph
 
-
-openai_client = OpenAIClient()
-
-SYSTEM_PROMPT = "You are a helpful assistant."
 HISTORY_LIMIT = int(os.environ.get("CONVERSATION_HISTORY_LIMIT", 20))
 
 
@@ -71,38 +63,38 @@ class ConversationDetailView(APIView):
 
 class ConversationMessagesView(APIView):
 
-    def _conversation_exists(self, conversation_id) -> bool:
-        return Conversation.objects.filter(id=conversation_id, is_deleted=False).exists()
+    def _get_conversation(self, conversation_id):
+        try:
+            return Conversation.objects.get(id=conversation_id, is_deleted=False)
+        except Conversation.DoesNotExist:
+            return None
 
-    def _build_messages(self, conversation_id, user_message) -> ResponseInputParam:
-        # 최근 HISTORY_LIMIT개를 역순으로 가져온 뒤 시간순으로 되돌림
-        history = list(
+    def _get_history(self, conversation_id, exclude_id):
+        return list(
             Message.objects.filter(conversation_id=conversation_id)
-            .exclude(id=user_message.id)
+            .exclude(id=exclude_id)
             .order_by('-created_at')[:HISTORY_LIMIT]
         )[::-1]
 
-        return cast(ResponseInputParam, [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            *[{"role": m.role, "content": m.content} for m in history],
-            {"role": "user", "content": user_message.content},
-        ])
-
-    def _stream_response(self, conversation_id, messages):
+    def _stream_response(self, conversation_id, graph, history, user_message):
         ai_content = ""
-        for delta in openai_client.stream(messages):
-            ai_content += delta
-            yield f"data: {delta}\n\n".encode()
-
-        Message.objects.create(
-            conversation_id=conversation_id,
-            role='assistant',
-            content=ai_content.strip(),
-        )
+        try:
+            for delta in graph.stream(history, user_message.content):
+                ai_content += delta
+                yield f"data: {delta}\n\n".encode()
+        except Exception:
+            if not ai_content:
+                ai_content = "[error]"
+        finally:
+            Message.objects.create(
+                conversation_id=conversation_id,
+                role='assistant',
+                content=ai_content.strip(),
+            )
         yield b"data: [DONE]\n\n"
 
     def get(self, request, conversation_id):
-        if not self._conversation_exists(conversation_id):
+        if self._get_conversation(conversation_id) is None:
             return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
 
         messages = Message.objects.filter(conversation_id=conversation_id).order_by('created_at')
@@ -110,12 +102,21 @@ class ConversationMessagesView(APIView):
         return Response(serializer.data)
 
     def post(self, request, conversation_id):
-        if not self._conversation_exists(conversation_id):
+        conversation = self._get_conversation(conversation_id)
+        if conversation is None:
             return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
 
         serializer = MessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user_message = serializer.save(conversation_id=conversation_id)
 
-        messages = self._build_messages(conversation_id, user_message)
-        return StreamingHttpResponse(self._stream_response(conversation_id, messages), content_type="text/event-stream")
+        graph = ConversationGraph(
+            model=conversation.model,
+            temperature=conversation.temperature,
+            system_prompt=conversation.system_prompt,
+        )
+        history = self._get_history(conversation_id, exclude_id=user_message.id)
+        return StreamingHttpResponse(
+            self._stream_response(conversation_id, graph, history, user_message),
+            content_type="text/event-stream"
+        )
