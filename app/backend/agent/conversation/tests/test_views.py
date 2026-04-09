@@ -197,19 +197,24 @@ class ConversationMessagesViewTest(TestCase):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 404)
 
-    @patch('conversation.views.openai_client')
-    def test_post_message(self, mock_client):
-        mock_client.stream.return_value = iter([])
+    @patch('conversation.views.ConversationGraph')
+    def test_post_message(self, mock_graph_cls):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
         response = self.client.post(self.url, {'role': 'user', 'content': 'hello'}, format='json')
         self.assertEqual(response.status_code, 200)
         b''.join(response.streaming_content)
         self.assertTrue(Message.objects.filter(role='user', content='hello', conversation=self.conversation).exists())
 
-    @patch('conversation.views.openai_client')
-    def test_post_message_assistant_role(self, mock_client):
-        mock_client.stream.return_value = iter([])
+    @patch('conversation.views.ConversationGraph')
+    def test_post_message_assistant_role(self, mock_graph_cls):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
         response = self.client.post(self.url, {'role': 'assistant', 'content': 'hi'}, format='json')
         self.assertEqual(response.status_code, 200)
+        b''.join(response.streaming_content)
         self.assertTrue(Message.objects.filter(role='assistant', content='hi', conversation=self.conversation).exists())
 
     def test_post_message_missing_role(self):
@@ -233,20 +238,26 @@ class ConversationMessagesViewTest(TestCase):
         response = self.client.post(self.url, {'role': 'user', 'content': 'hello'}, format='json')
         self.assertEqual(response.status_code, 404)
 
-    @patch('conversation.views.openai_client')
-    def test_post_message_includes_system_prompt_in_stream(self, mock_client):
-        mock_client.stream.return_value = iter([])
+    @patch('conversation.views.ConversationGraph')
+    def test_post_message_includes_system_prompt_in_stream(self, mock_graph_cls):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
+
+        self.conversation.system_prompt = "Be concise."
+        self.conversation.save()
 
         response = self.client.post(self.url, {'role': 'user', 'content': 'hello'}, format='json')
         b''.join(response.streaming_content)
 
-        call_args = mock_client.stream.call_args[0][0]
-        self.assertEqual(call_args[0]['role'], 'system')
-        self.assertTrue(len(call_args[0]['content']) > 0)
+        _, kwargs = mock_graph_cls.call_args
+        self.assertEqual(kwargs['system_prompt'], 'Be concise.')
 
-    @patch('conversation.views.openai_client')
-    def test_post_message_includes_history_in_stream(self, mock_client):
-        mock_client.stream.return_value = iter([])
+    @patch('conversation.views.ConversationGraph')
+    def test_post_message_includes_history_in_stream(self, mock_graph_cls):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
 
         Message.objects.create(conversation=self.conversation, role='user', content='first msg')
         Message.objects.create(conversation=self.conversation, role='assistant', content='first reply')
@@ -254,16 +265,18 @@ class ConversationMessagesViewTest(TestCase):
         response = self.client.post(self.url, {'role': 'user', 'content': 'second msg'}, format='json')
         b''.join(response.streaming_content)
 
-        call_args = mock_client.stream.call_args[0][0]
-        contents = [m['content'] for m in call_args]
-        self.assertIn('first msg', contents)
-        self.assertIn('first reply', contents)
-        self.assertEqual(call_args[-1], {'role': 'user', 'content': 'second msg'})
+        history, user_content = mock_graph.stream.call_args[0]
+        history_contents = [m.content for m in history]
+        self.assertIn('first msg', history_contents)
+        self.assertIn('first reply', history_contents)
+        self.assertEqual(user_content, 'second msg')
 
     @patch('conversation.views.HISTORY_LIMIT', 2)
-    @patch('conversation.views.openai_client')
-    def test_post_message_respects_history_limit(self, mock_client):
-        mock_client.stream.return_value = iter([])
+    @patch('conversation.views.ConversationGraph')
+    def test_post_message_respects_history_limit(self, mock_graph_cls):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
 
         for i in range(5):
             Message.objects.create(conversation=self.conversation, role='user', content=f'msg {i}')
@@ -271,18 +284,19 @@ class ConversationMessagesViewTest(TestCase):
         response = self.client.post(self.url, {'role': 'user', 'content': 'new msg'}, format='json')
         b''.join(response.streaming_content)
 
-        call_args = mock_client.stream.call_args[0][0]
-        # system(1) + history(2) + current(1) = 4
-        self.assertEqual(len(call_args), 4)
+        history, _ = mock_graph.stream.call_args[0]
+        self.assertEqual(len(history), 2)
 
-    @patch('conversation.views.openai_client')
-    def test_post_message_current_user_message_not_duplicated_in_history(self, mock_client):
-        mock_client.stream.return_value = iter([])
+    @patch('conversation.views.ConversationGraph')
+    def test_post_message_current_user_message_not_duplicated_in_history(self, mock_graph_cls):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
 
         response = self.client.post(self.url, {'role': 'user', 'content': 'my message'}, format='json')
         b''.join(response.streaming_content)
 
-        call_args = mock_client.stream.call_args[0][0]
-        occurrences = [m for m in call_args if m.get('content') == 'my message']
-        self.assertEqual(len(occurrences), 1)
-        self.assertEqual(call_args[-1]['content'], 'my message')
+        history, user_content = mock_graph.stream.call_args[0]
+        self.assertEqual(user_content, 'my message')
+        history_contents = [m.content for m in history]
+        self.assertNotIn('my message', history_contents)
