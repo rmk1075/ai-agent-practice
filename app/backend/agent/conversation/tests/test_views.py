@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from conversation.models import Conversation, ConversationMetadata, Message
 from django.test import TestCase
@@ -47,6 +47,35 @@ class ConversationViewTest(TestCase):
     def test_post_conversation_missing_name(self):
         response = self.client.post(self.url, {}, format='json')
         self.assertEqual(response.status_code, 400)
+
+    def test_post_conversation_with_ai_settings(self):
+        response = self.client.post(self.url, {
+            'name': '창의적 대화',
+            'model': 'gpt-4o',
+            'temperature': 1.0,
+            'system_prompt': 'You are a creative writer.',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data['model'], 'gpt-4o')
+        self.assertEqual(data['temperature'], 1.0)
+        self.assertEqual(data['system_prompt'], 'You are a creative writer.')
+
+    def test_post_conversation_uses_defaults(self):
+        response = self.client.post(self.url, {'name': '기본 대화'}, format='json')
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertEqual(data['model'], 'gpt-4o-mini')
+        self.assertAlmostEqual(data['temperature'], 0.7)
+        self.assertEqual(data['system_prompt'], 'You are a helpful assistant.')
+
+    def test_patch_conversation_system_prompt(self):
+        conv = Conversation.objects.create(name='test')
+        response = self.client.patch(f'/conversations/{conv.id}/', {
+            'system_prompt': 'You are a Python expert.'
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['system_prompt'], 'You are a Python expert.')
 
 
 class ConversationDetailViewTest(TestCase):
