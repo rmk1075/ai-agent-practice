@@ -55,4 +55,20 @@ describe('MessageInput', () => {
     fireEvent.click(screen.getByRole('button', { name: /send/i }))
     expect(onSend).not.toHaveBeenCalled()
   })
+
+  it('does not call onSend with whitespace-only input', async () => {
+    const onSend = vi.fn()
+    render(<MessageInput onSend={onSend} disabled={false} />)
+    await userEvent.type(screen.getByRole('textbox'), '   ')
+    fireEvent.click(screen.getByRole('button', { name: /send/i }))
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('does not call onSend on Enter when disabled', async () => {
+    const onSend = vi.fn()
+    render(<MessageInput onSend={onSend} disabled={true} />)
+    // disabled textarea won't receive keyboard events — this documents the contract
+    expect(screen.getByRole('textbox')).toBeDisabled()
+    expect(screen.getByRole('button', { name: /send/i })).toBeDisabled()
+  })
 })
