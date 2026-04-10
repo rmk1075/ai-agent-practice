@@ -1,0 +1,65 @@
+.container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  background: var(--color-bg);
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-blue);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.5px;
+}
+
+.inputWrapper {
+  width: 100%;
+  max-width: 640px;
+  margin-bottom: 20px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.actionButton {
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1.5px solid var(--color-orange);
+  background: transparent;
+  color: var(--color-orange);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.actionButton:hover {
+  background: var(--color-orange-light);
+}
