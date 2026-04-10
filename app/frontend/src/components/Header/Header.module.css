@@ -1,0 +1,49 @@
+.header {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  height: 52px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.hamburger {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: var(--color-text);
+  padding: 6px;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.hamburger:hover {
+  background: var(--color-bubble-ai);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-blue);
+  animation: pulse 2s infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
