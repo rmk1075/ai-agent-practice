@@ -51,7 +51,7 @@ describe('MessageInput', () => {
 
   it('does not call onSend with empty input', () => {
     const onSend = vi.fn()
-    render(<MessageInput onSend={vi.fn()} disabled={false} />)
+    render(<MessageInput onSend={onSend} disabled={false} />)
     fireEvent.click(screen.getByRole('button', { name: /send/i }))
     expect(onSend).not.toHaveBeenCalled()
   })
