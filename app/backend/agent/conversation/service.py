@@ -1,12 +1,52 @@
+import logging
+import threading
 from typing import Annotated, Generator
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from conversation.models import ConversationMetadata, Message
+
+logger = logging.getLogger(__name__)
+
+EXTRACTION_SYSTEM_PROMPT = """You are an information extraction assistant.
+Analyze the user message and extract important personal info, preferences, or key facts/decisions.
+
+Extract:
+- Personal info: name, occupation, location, etc.
+- Preferences: language, communication style, interests
+- Key facts/decisions: project decisions, constraints, goals
+
+Rules:
+- Only extract clearly stated information (no inference)
+- Keys: concise English snake_case (e.g. "user_name", "preferred_language")
+- If nothing important, return empty items"""
+
+
+class ExtractedMetadata(BaseModel):
+    data: dict[str, str] = Field(default_factory=dict)
+
+
+def extract_metadata(conversation_id: int, user_message: str) -> None:
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    try:
+        extractor = llm.with_structured_output(ExtractedMetadata)
+        result = extractor.invoke([
+            SystemMessage(content=EXTRACTION_SYSTEM_PROMPT),
+            HumanMessage(content=user_message),
+        ])
+        for key, value in result.data.items():
+            ConversationMetadata.objects.update_or_create(
+                conversation_id=conversation_id,
+                key=key,
+                defaults={"value": value, "is_deleted": False},
+            )
+    except Exception:
+        logger.error("metadata extraction failed", exc_info=True)
 
 
 class ConversationState(TypedDict):
@@ -61,3 +101,11 @@ class ConversationGraph:
         ):
             if chunk.content:
                 yield chunk.content
+
+        # best-effort: runs only when generator fully exhausted; skipped on early close (e.g. client disconnect mid-stream)
+        t = threading.Thread(
+            target=extract_metadata,
+            args=(self._conversation_id, user_message),
+            daemon=True,
+        )
+        t.start()
