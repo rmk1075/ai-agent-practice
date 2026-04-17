@@ -4,7 +4,7 @@ from django.test import TestCase
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from conversation.models import Conversation, ConversationMetadata, Message
-from conversation.service import ConversationGraph
+from conversation.service import ConversationGraph, extract_metadata
 
 
 class ConversationGraphMetadataNodeTest(TestCase):
@@ -214,3 +214,159 @@ class ConversationGraphStreamTest(TestCase):
             list(graph.stream([], "hello"))
 
         self.assertEqual(captured['input']['metadata_context'], "")
+
+
+class ExtractMetadataTest(TestCase):
+
+    @patch('conversation.service.ChatOpenAI')
+    def test_extract_metadata_saves_new_metadata(self, mock_llm_cls):
+        mock_llm = MagicMock()
+        mock_llm_cls.return_value = mock_llm
+
+        mock_extractor = MagicMock()
+        mock_llm.with_structured_output.return_value = mock_extractor
+
+        extracted = MagicMock()
+        extracted.data = {"user_name": "John", "occupation": "lawyer"}
+        mock_extractor.invoke.return_value = extracted
+
+        conv = Conversation.objects.create(name='test')
+
+        extract_metadata(conv.id, "Hi, I'm John, a lawyer.")
+
+        metas = ConversationMetadata.objects.filter(conversation=conv)
+        self.assertEqual(metas.count(), 2)
+        self.assertEqual(metas.get(key="user_name").value, "John")
+        self.assertEqual(metas.get(key="occupation").value, "lawyer")
+
+    @patch('conversation.service.ChatOpenAI')
+    def test_extract_metadata_upserts_existing_key(self, mock_llm_cls):
+        mock_llm = MagicMock()
+        mock_llm_cls.return_value = mock_llm
+
+        mock_extractor = MagicMock()
+        mock_llm.with_structured_output.return_value = mock_extractor
+
+        extracted = MagicMock()
+        extracted.data = {"user_name": "Jane"}
+        mock_extractor.invoke.return_value = extracted
+
+        conv = Conversation.objects.create(name='test')
+        ConversationMetadata.objects.create(conversation=conv, key="user_name", value="John")
+
+        extract_metadata(conv.id, "Actually my name is Jane.")
+
+        metas = ConversationMetadata.objects.filter(conversation=conv, key="user_name")
+        self.assertEqual(metas.count(), 1)
+        self.assertEqual(metas.first().value, "Jane")
+
+    @patch('conversation.service.ChatOpenAI')
+    def test_extract_metadata_skips_on_empty_result(self, mock_llm_cls):
+        mock_llm = MagicMock()
+        mock_llm_cls.return_value = mock_llm
+
+        mock_extractor = MagicMock()
+        mock_llm.with_structured_output.return_value = mock_extractor
+
+        extracted = MagicMock()
+        extracted.data = {}
+        mock_extractor.invoke.return_value = extracted
+
+        conv = Conversation.objects.create(name='test')
+        ConversationMetadata.objects.create(conversation=conv, key="existing_key", value="original_value")
+
+        extract_metadata(conv.id, "What's the weather like?")
+
+        self.assertEqual(ConversationMetadata.objects.filter(conversation=conv).count(), 1)
+        self.assertEqual(ConversationMetadata.objects.get(conversation=conv, key="existing_key").value, "original_value")
+
+    @patch('conversation.service.ChatOpenAI')
+    def test_extract_metadata_handles_extractor_invoke_error_silently(self, mock_llm_cls):
+        mock_llm = MagicMock()
+        mock_llm_cls.return_value = mock_llm
+
+        mock_extractor = MagicMock()
+        mock_llm.with_structured_output.return_value = mock_extractor
+        mock_extractor.invoke.side_effect = Exception("LLM unavailable")
+
+        conv = Conversation.objects.create(name='test')
+
+        try:
+            extract_metadata(conv.id, "some message")
+        except Exception:
+            self.fail("extract_metadata raised an exception")
+
+        self.assertEqual(ConversationMetadata.objects.filter(conversation=conv).count(), 0)
+
+    @patch('conversation.service.ChatOpenAI')
+    def test_extract_metadata_reactivates_soft_deleted_key(self, mock_llm_cls):
+        mock_llm = MagicMock()
+        mock_llm_cls.return_value = mock_llm
+
+        mock_extractor = MagicMock()
+        mock_llm.with_structured_output.return_value = mock_extractor
+
+        extracted = MagicMock()
+        extracted.data = {"user_name": "Alice"}
+        mock_extractor.invoke.return_value = extracted
+
+        conv = Conversation.objects.create(name='test')
+        meta = ConversationMetadata.objects.create(conversation=conv, key="user_name", value="Old")
+        meta.delete()  # soft delete
+
+        extract_metadata(conv.id, "My name is Alice.")
+
+        restored = ConversationMetadata.objects.get(conversation=conv, key="user_name")
+        self.assertEqual(restored.value, "Alice")
+        self.assertFalse(restored.is_deleted)
+
+
+class ConversationGraphStreamThreadTest(TestCase):
+
+    @patch('conversation.service.threading.Thread')
+    @patch('conversation.service.ChatOpenAI')
+    def test_stream_starts_extraction_thread_after_exhaustion(self, mock_llm_cls, mock_thread_cls):
+        mock_llm_cls.return_value = MagicMock()
+        mock_thread = MagicMock()
+        mock_thread_cls.return_value = mock_thread
+
+        graph = ConversationGraph(
+            model="gpt-4o-mini",
+            temperature=0.7,
+            system_prompt="Be helpful.",
+            conversation_id=42,
+        )
+
+        with patch.object(graph._graph, 'stream', return_value=iter([])):
+            list(graph.stream([], "I'm Alice, a doctor."))
+
+        mock_thread_cls.assert_called_once_with(
+            target=extract_metadata,
+            args=(42, "I'm Alice, a doctor."),
+            daemon=True,
+        )
+        mock_thread.start.assert_called_once()
+
+    @patch('conversation.service.threading.Thread')
+    @patch('conversation.service.ChatOpenAI')
+    def test_stream_does_not_start_thread_when_generator_closed_early(self, mock_llm_cls, mock_thread_cls):
+        mock_llm_cls.return_value = MagicMock()
+        mock_thread = MagicMock()
+        mock_thread_cls.return_value = mock_thread
+
+        graph = ConversationGraph(
+            model="gpt-4o-mini",
+            temperature=0.7,
+            system_prompt="Be helpful.",
+            conversation_id=42,
+        )
+
+        chunk = MagicMock()
+        chunk.content = "Hello"
+
+        with patch.object(graph._graph, 'stream', return_value=iter([(chunk, {})])):
+            gen = graph.stream([], "I'm Alice, a doctor.")
+            next(gen)  # consume one item
+            gen.close()  # close before exhaustion
+
+        mock_thread.start.assert_not_called()
