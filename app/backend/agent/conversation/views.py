@@ -114,6 +114,7 @@ class ConversationMessagesView(APIView):
             model=conversation.model,
             temperature=conversation.temperature,
             system_prompt=conversation.system_prompt,
+            conversation_id=conversation_id,
         )
         history = self._get_history(conversation_id, exclude_id=user_message.id)
         return StreamingHttpResponse(

@@ -300,3 +300,15 @@ class ConversationMessagesViewTest(TestCase):
         self.assertEqual(user_content, 'my message')
         history_contents = [m.content for m in history]
         self.assertNotIn('my message', history_contents)
+
+    @patch('conversation.views.ConversationGraph')
+    def test_post_message_passes_conversation_id_to_graph(self, mock_graph_cls):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
+
+        response = self.client.post(self.url, {'role': 'user', 'content': 'hello'}, format='json')
+        b''.join(response.streaming_content)
+
+        _, kwargs = mock_graph_cls.call_args
+        self.assertEqual(kwargs['conversation_id'], self.conversation.id)

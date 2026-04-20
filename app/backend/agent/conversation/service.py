@@ -1,27 +1,91 @@
-from typing import Generator
+import logging
+import threading
+from typing import Annotated, Generator
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langgraph.graph import MessagesState, StateGraph
+from langgraph.graph import StateGraph
+from langgraph.graph.message import add_messages
+from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
-from conversation.models import Message
+from conversation.models import ConversationMetadata, Message
+
+logger = logging.getLogger(__name__)
+
+EXTRACTION_SYSTEM_PROMPT = """You are an information extraction assistant.
+Analyze the user message and extract important personal info, preferences, or key facts/decisions.
+
+Extract:
+- Personal info: name, occupation, location, etc.
+- Preferences: language, communication style, interests
+- Key facts/decisions: project decisions, constraints, goals
+
+Rules:
+- Only extract clearly stated information (no inference)
+- Keys: concise English snake_case (e.g. "user_name", "preferred_language")
+- If nothing important, return empty items"""
+
+
+class ExtractedMetadata(BaseModel):
+    data: dict[str, str] = Field(default_factory=dict)
+
+
+def extract_metadata(conversation_id: int, user_message: str) -> None:
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    try:
+        extractor = llm.with_structured_output(ExtractedMetadata)
+        result = extractor.invoke([
+            SystemMessage(content=EXTRACTION_SYSTEM_PROMPT),
+            HumanMessage(content=user_message),
+        ])
+        for key, value in result.data.items():
+            ConversationMetadata.objects.update_or_create(
+                conversation_id=conversation_id,
+                key=key,
+                defaults={"value": value, "is_deleted": False},
+            )
+    except Exception:
+        logger.error("metadata extraction failed", exc_info=True)
+
+
+class ConversationState(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+    metadata_context: str
 
 
 class ConversationGraph:
-    def __init__(self, model: str, temperature: float, system_prompt: str):
+    def __init__(self, model: str, temperature: float, system_prompt: str, conversation_id: int):
         self._llm = ChatOpenAI(model=model, temperature=temperature, streaming=True)
         self._system_prompt = system_prompt
+        self._conversation_id = conversation_id
         self._graph = self._build()
 
-    def _chatbot_node(self, state: MessagesState):
-        messages = [SystemMessage(content=self._system_prompt)] + state["messages"]
+    def _metadata_node(self, state: ConversationState) -> dict:
+        # state not used; metadata is fetched directly from DB by conversation_id
+        items = list(
+            ConversationMetadata.objects.filter(
+                conversation_id=self._conversation_id,
+                is_deleted=False,
+            ).order_by('created_at').values_list('key', 'value')
+        )
+        if not items:
+            return {"metadata_context": ""}
+        lines = "\n".join(f"- {k}: {v}" for k, v in items)
+        return {"metadata_context": f"\n\nContext:\n{lines}"}
+
+    def _chatbot_node(self, state: ConversationState) -> dict:
+        full_prompt = self._system_prompt + state["metadata_context"]
+        messages = [SystemMessage(content=full_prompt)] + state["messages"]
         response = self._llm.invoke(messages)
         return {"messages": [response]}
 
     def _build(self):
-        graph = StateGraph(MessagesState)
+        graph = StateGraph(ConversationState)
+        graph.add_node("metadata", self._metadata_node)
         graph.add_node("chatbot", self._chatbot_node)
-        graph.set_entry_point("chatbot")
+        graph.add_edge("metadata", "chatbot")
+        graph.set_entry_point("metadata")
         graph.set_finish_point("chatbot")
         return graph.compile()
 
@@ -31,6 +95,17 @@ class ConversationGraph:
             for m in history
         ] + [HumanMessage(content=user_message)]
 
-        for chunk, _ in self._graph.stream({"messages": input_messages}, stream_mode="messages"):
+        for chunk, _ in self._graph.stream(
+            {"messages": input_messages, "metadata_context": ""},
+            stream_mode="messages",
+        ):
             if chunk.content:
                 yield chunk.content
+
+        # best-effort: runs only when generator fully exhausted; skipped on early close (e.g. client disconnect mid-stream)
+        t = threading.Thread(
+            target=extract_metadata,
+            args=(self._conversation_id, user_message),
+            daemon=True,
+        )
+        t.start()
