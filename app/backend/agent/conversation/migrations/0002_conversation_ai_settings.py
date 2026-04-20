@@ -4,25 +4,24 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('conversation', '0001_initial'),
+        ("conversation", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='conversation',
-            name='model',
-            field=models.CharField(default='gpt-4o-mini', max_length=100),
+            model_name="conversation",
+            name="model",
+            field=models.CharField(default="gpt-4o-mini", max_length=100),
         ),
         migrations.AddField(
-            model_name='conversation',
-            name='system_prompt',
-            field=models.TextField(default='You are a helpful assistant.'),
+            model_name="conversation",
+            name="system_prompt",
+            field=models.TextField(default="You are a helpful assistant."),
         ),
         migrations.AddField(
-            model_name='conversation',
-            name='temperature',
+            model_name="conversation",
+            name="temperature",
             field=models.FloatField(default=0.7),
         ),
     ]

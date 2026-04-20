@@ -36,10 +36,12 @@ def extract_metadata(conversation_id: int, user_message: str) -> None:
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     try:
         extractor = llm.with_structured_output(ExtractedMetadata)
-        result = extractor.invoke([
-            SystemMessage(content=EXTRACTION_SYSTEM_PROMPT),
-            HumanMessage(content=user_message),
-        ])
+        result = extractor.invoke(
+            [
+                SystemMessage(content=EXTRACTION_SYSTEM_PROMPT),
+                HumanMessage(content=user_message),
+            ]
+        )
         for key, value in result.data.items():
             ConversationMetadata.objects.update_or_create(
                 conversation_id=conversation_id,
@@ -67,7 +69,9 @@ class ConversationGraph:
             ConversationMetadata.objects.filter(
                 conversation_id=conversation_id,
                 is_deleted=False,
-            ).order_by('created_at').values_list('key', 'value')
+            )
+            .order_by("created_at")
+            .values_list("key", "value")
         )
         if not items:
             return {"metadata_context": ""}
@@ -89,9 +93,13 @@ class ConversationGraph:
         graph.set_finish_point("chatbot")
         return graph.compile()
 
-    def stream(self, history: list[Message], user_message: str, conversation_id: int) -> Generator[str, None, None]:
+    def stream(
+        self, history: list[Message], user_message: str, conversation_id: int
+    ) -> Generator[str, None, None]:
         input_messages = [
-            HumanMessage(content=m.content) if m.role == "user" else AIMessage(content=m.content)
+            HumanMessage(content=m.content)
+            if m.role == "user"
+            else AIMessage(content=m.content)
             for m in history
         ] + [HumanMessage(content=user_message)]
 
