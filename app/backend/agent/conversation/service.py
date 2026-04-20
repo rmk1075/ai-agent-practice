@@ -3,6 +3,7 @@ import threading
 from typing import Annotated, Generator
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
@@ -55,17 +56,16 @@ class ConversationState(TypedDict):
 
 
 class ConversationGraph:
-    def __init__(self, model: str, temperature: float, system_prompt: str, conversation_id: int):
+    def __init__(self, model: str, temperature: float, system_prompt: str):
         self._llm = ChatOpenAI(model=model, temperature=temperature, streaming=True)
         self._system_prompt = system_prompt
-        self._conversation_id = conversation_id
         self._graph = self._build()
 
-    def _metadata_node(self, state: ConversationState) -> dict:
-        # state not used; metadata is fetched directly from DB by conversation_id
+    def _metadata_node(self, state: ConversationState, config: RunnableConfig) -> dict:
+        conversation_id = config["configurable"]["conversation_id"]
         items = list(
             ConversationMetadata.objects.filter(
-                conversation_id=self._conversation_id,
+                conversation_id=conversation_id,
                 is_deleted=False,
             ).order_by('created_at').values_list('key', 'value')
         )
@@ -89,7 +89,7 @@ class ConversationGraph:
         graph.set_finish_point("chatbot")
         return graph.compile()
 
-    def stream(self, history: list[Message], user_message: str) -> Generator[str, None, None]:
+    def stream(self, history: list[Message], user_message: str, conversation_id: int) -> Generator[str, None, None]:
         input_messages = [
             HumanMessage(content=m.content) if m.role == "user" else AIMessage(content=m.content)
             for m in history
@@ -97,6 +97,7 @@ class ConversationGraph:
 
         for chunk, _ in self._graph.stream(
             {"messages": input_messages, "metadata_context": ""},
+            config={"configurable": {"conversation_id": conversation_id}},
             stream_mode="messages",
         ):
             if chunk.content:
@@ -105,7 +106,7 @@ class ConversationGraph:
         # best-effort: runs only when generator fully exhausted; skipped on early close (e.g. client disconnect mid-stream)
         t = threading.Thread(
             target=extract_metadata,
-            args=(self._conversation_id, user_message),
+            args=(conversation_id, user_message),
             daemon=True,
         )
         t.start()

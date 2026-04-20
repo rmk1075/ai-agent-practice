@@ -20,9 +20,8 @@ class ConversationGraphMetadataNodeTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="You are helpful.",
-            conversation_id=conv.id,
         )
-        result = graph._metadata_node({})
+        result = graph._metadata_node({}, {"configurable": {"conversation_id": conv.id}})
 
         self.assertEqual(result['metadata_context'], "\n\nContext:\n- user_name: John\n- role: Lawyer")
 
@@ -35,9 +34,8 @@ class ConversationGraphMetadataNodeTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="You are helpful.",
-            conversation_id=conv.id,
         )
-        result = graph._metadata_node({})
+        result = graph._metadata_node({}, {"configurable": {"conversation_id": conv.id}})
 
         self.assertEqual(result['metadata_context'], "")
 
@@ -53,9 +51,8 @@ class ConversationGraphMetadataNodeTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="You are helpful.",
-            conversation_id=conv.id,
         )
-        result = graph._metadata_node({})
+        result = graph._metadata_node({}, {"configurable": {"conversation_id": conv.id}})
 
         self.assertIn('active_key', result['metadata_context'])
         self.assertIn('active_value', result['metadata_context'])
@@ -74,7 +71,6 @@ class ConversationGraphChatbotNodeTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="You are helpful.",
-            conversation_id=0,
         )
         state = {
             "messages": [HumanMessage(content="hello")],
@@ -96,7 +92,6 @@ class ConversationGraphChatbotNodeTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="You are a pirate.",
-            conversation_id=0,
         )
         state = {
             "messages": [HumanMessage(content="hello")],
@@ -127,13 +122,12 @@ class ConversationGraphStreamTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="You are a helpful assistant.",
-            conversation_id=0,
         )
 
         with patch.object(graph._graph, 'stream', return_value=iter([
             (chunk1, {}), (empty_chunk, {}), (chunk2, {})
         ])):
-            result = list(graph.stream([], "hi"))
+            result = list(graph.stream([], "hi", 0))
 
         self.assertEqual(result, ["Hello", " world"])
 
@@ -145,14 +139,13 @@ class ConversationGraphStreamTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="You are a helpful assistant.",
-            conversation_id=0,
         )
 
         empty = MagicMock()
         empty.content = ""
 
         with patch.object(graph._graph, 'stream', return_value=iter([(empty, {})])):
-            result = list(graph.stream([], "hi"))
+            result = list(graph.stream([], "hi", 0))
 
         self.assertEqual(result, [])
 
@@ -164,7 +157,6 @@ class ConversationGraphStreamTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="Be helpful.",
-            conversation_id=0,
         )
 
         user_msg = MagicMock(spec=Message)
@@ -177,12 +169,12 @@ class ConversationGraphStreamTest(TestCase):
 
         captured = {}
 
-        def fake_stream(input_dict, stream_mode):
+        def fake_stream(input_dict, **kwargs):
             captured['input'] = input_dict
             return iter([])
 
         with patch.object(graph._graph, 'stream', side_effect=fake_stream):
-            list(graph.stream([user_msg, assistant_msg], "follow-up"))
+            list(graph.stream([user_msg, assistant_msg], "follow-up", 0))
 
         msgs = captured['input']['messages']
         self.assertEqual(len(msgs), 3)
@@ -201,17 +193,16 @@ class ConversationGraphStreamTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="Be helpful.",
-            conversation_id=0,
         )
 
         captured = {}
 
-        def fake_stream(input_dict, stream_mode):
+        def fake_stream(input_dict, **kwargs):
             captured['input'] = input_dict
             return iter([])
 
         with patch.object(graph._graph, 'stream', side_effect=fake_stream):
-            list(graph.stream([], "hello"))
+            list(graph.stream([], "hello", 0))
 
         self.assertEqual(captured['input']['metadata_context'], "")
 
@@ -334,11 +325,10 @@ class ConversationGraphStreamThreadTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="Be helpful.",
-            conversation_id=42,
         )
 
         with patch.object(graph._graph, 'stream', return_value=iter([])):
-            list(graph.stream([], "I'm Alice, a doctor."))
+            list(graph.stream([], "I'm Alice, a doctor.", 42))
 
         mock_thread_cls.assert_called_once_with(
             target=extract_metadata,
@@ -358,14 +348,13 @@ class ConversationGraphStreamThreadTest(TestCase):
             model="gpt-4o-mini",
             temperature=0.7,
             system_prompt="Be helpful.",
-            conversation_id=42,
         )
 
         chunk = MagicMock()
         chunk.content = "Hello"
 
         with patch.object(graph._graph, 'stream', return_value=iter([(chunk, {})])):
-            gen = graph.stream([], "I'm Alice, a doctor.")
+            gen = graph.stream([], "I'm Alice, a doctor.", 42)
             next(gen)  # consume one item
             gen.close()  # close before exhaustion
 

@@ -79,7 +79,7 @@ class ConversationMessagesView(APIView):
     def _stream_response(self, conversation_id, graph, history, user_message):
         ai_content = ""
         try:
-            for delta in graph.stream(history, user_message.content):
+            for delta in graph.stream(history, user_message.content, conversation_id):
                 ai_content += delta
                 yield f"data: {delta}\n\n".encode()
         except Exception:
@@ -114,7 +114,6 @@ class ConversationMessagesView(APIView):
             model=conversation.model,
             temperature=conversation.temperature,
             system_prompt=conversation.system_prompt,
-            conversation_id=conversation_id,
         )
         history = self._get_history(conversation_id, exclude_id=user_message.id)
         return StreamingHttpResponse(

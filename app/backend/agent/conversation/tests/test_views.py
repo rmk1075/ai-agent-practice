@@ -265,7 +265,7 @@ class ConversationMessagesViewTest(TestCase):
         response = self.client.post(self.url, {'role': 'user', 'content': 'second msg'}, format='json')
         b''.join(response.streaming_content)
 
-        history, user_content = mock_graph.stream.call_args[0]
+        history, user_content, _ = mock_graph.stream.call_args[0]
         history_contents = [m.content for m in history]
         self.assertIn('first msg', history_contents)
         self.assertIn('first reply', history_contents)
@@ -284,7 +284,7 @@ class ConversationMessagesViewTest(TestCase):
         response = self.client.post(self.url, {'role': 'user', 'content': 'new msg'}, format='json')
         b''.join(response.streaming_content)
 
-        history, _ = mock_graph.stream.call_args[0]
+        history, *_ = mock_graph.stream.call_args[0]
         self.assertEqual(len(history), 2)
 
     @patch('conversation.views.ConversationGraph')
@@ -296,13 +296,13 @@ class ConversationMessagesViewTest(TestCase):
         response = self.client.post(self.url, {'role': 'user', 'content': 'my message'}, format='json')
         b''.join(response.streaming_content)
 
-        history, user_content = mock_graph.stream.call_args[0]
+        history, user_content, _ = mock_graph.stream.call_args[0]
         self.assertEqual(user_content, 'my message')
         history_contents = [m.content for m in history]
         self.assertNotIn('my message', history_contents)
 
     @patch('conversation.views.ConversationGraph')
-    def test_post_message_passes_conversation_id_to_graph(self, mock_graph_cls):
+    def test_post_message_passes_conversation_id_to_stream(self, mock_graph_cls):
         mock_graph = MagicMock()
         mock_graph_cls.return_value = mock_graph
         mock_graph.stream.return_value = iter([])
@@ -310,5 +310,5 @@ class ConversationMessagesViewTest(TestCase):
         response = self.client.post(self.url, {'role': 'user', 'content': 'hello'}, format='json')
         b''.join(response.streaming_content)
 
-        _, kwargs = mock_graph_cls.call_args
-        self.assertEqual(kwargs['conversation_id'], self.conversation.id)
+        _, user_content, conversation_id = mock_graph.stream.call_args[0]
+        self.assertEqual(conversation_id, self.conversation.id)
