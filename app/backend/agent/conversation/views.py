@@ -6,16 +6,21 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from conversation.models import Conversation, Message
-from conversation.serializers import ConversationDetailSerializer, ConversationSerializer, MessageSerializer
+from conversation.serializers import (
+    ConversationDetailSerializer,
+    ConversationSerializer,
+    MessageSerializer,
+)
 from conversation.service import ConversationGraph
 
 HISTORY_LIMIT = int(os.environ.get("CONVERSATION_HISTORY_LIMIT", 20))
 
 
 class ConversationView(APIView):
-
     def get(self, request):
-        conversations = Conversation.objects.filter(is_deleted=False).order_by('-created_at')
+        conversations = Conversation.objects.filter(is_deleted=False).order_by(
+            "-created_at"
+        )
         serializer = ConversationSerializer(conversations, many=True)
         return Response(serializer.data)
 
@@ -27,7 +32,6 @@ class ConversationView(APIView):
 
 
 class ConversationDetailView(APIView):
-
     def _get_conversation(self, conversation_id):
         try:
             return Conversation.objects.get(id=conversation_id, is_deleted=False)
@@ -37,7 +41,9 @@ class ConversationDetailView(APIView):
     def get(self, request, conversation_id):
         conversation = self._get_conversation(conversation_id)
         if conversation is None:
-            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
         serializer = ConversationDetailSerializer(conversation)
         return Response(serializer.data)
@@ -45,9 +51,13 @@ class ConversationDetailView(APIView):
     def patch(self, request, conversation_id):
         conversation = self._get_conversation(conversation_id)
         if conversation is None:
-            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
-        serializer = ConversationSerializer(conversation, data=request.data, partial=True)
+        serializer = ConversationSerializer(
+            conversation, data=request.data, partial=True
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
@@ -55,14 +65,15 @@ class ConversationDetailView(APIView):
     def delete(self, request, conversation_id):
         conversation = self._get_conversation(conversation_id)
         if conversation is None:
-            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
         conversation.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ConversationMessagesView(APIView):
-
     def _get_conversation(self, conversation_id):
         try:
             return Conversation.objects.get(id=conversation_id, is_deleted=False)
@@ -73,7 +84,7 @@ class ConversationMessagesView(APIView):
         return list(
             Message.objects.filter(conversation_id=conversation_id)
             .exclude(id=exclude_id)
-            .order_by('-created_at')[:HISTORY_LIMIT]
+            .order_by("-created_at")[:HISTORY_LIMIT]
         )[::-1]
 
     def _stream_response(self, conversation_id, graph, history, user_message):
@@ -88,23 +99,29 @@ class ConversationMessagesView(APIView):
         finally:
             Message.objects.create(
                 conversation_id=conversation_id,
-                role='assistant',
+                role="assistant",
                 content=ai_content.strip(),
             )
         yield b"data: [DONE]\n\n"
 
     def get(self, request, conversation_id):
         if self._get_conversation(conversation_id) is None:
-            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
-        messages = Message.objects.filter(conversation_id=conversation_id).order_by('created_at')
+        messages = Message.objects.filter(conversation_id=conversation_id).order_by(
+            "created_at"
+        )
         serializer = MessageSerializer(messages, many=True)
         return Response(serializer.data)
 
     def post(self, request, conversation_id):
         conversation = self._get_conversation(conversation_id)
         if conversation is None:
-            return Response({'error': 'Conversation not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
         serializer = MessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -118,5 +135,5 @@ class ConversationMessagesView(APIView):
         history = self._get_history(conversation_id, exclude_id=user_message.id)
         return StreamingHttpResponse(
             self._stream_response(conversation_id, graph, history, user_message),
-            content_type="text/event-stream"
+            content_type="text/event-stream",
         )

@@ -6,19 +6,27 @@ from conversation.models import Conversation, ConversationMetadata, Message
 class ConversationMetadataSerializer(serializers.ModelSerializer):
     class Meta:
         model = ConversationMetadata
-        fields = ['key', 'value']
+        fields = ["key", "value"]
 
 
 class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
-        fields = ['id', 'role', 'content', 'created_at']
+        fields = ["id", "role", "content", "created_at"]
 
 
 class ConversationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conversation
-        fields = ['id', 'name', 'system_prompt', 'model', 'temperature', 'created_at', 'updated_at']
+        fields = [
+            "id",
+            "name",
+            "system_prompt",
+            "model",
+            "temperature",
+            "created_at",
+            "updated_at",
+        ]
 
 
 class ConversationDetailSerializer(serializers.ModelSerializer):
@@ -26,4 +34,13 @@ class ConversationDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Conversation
-        fields = ['id', 'name', 'system_prompt', 'model', 'temperature', 'created_at', 'updated_at', 'metadata']
+        fields = [
+            "id",
+            "name",
+            "system_prompt",
+            "model",
+            "temperature",
+            "created_at",
+            "updated_at",
+            "metadata",
+        ]
