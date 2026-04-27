@@ -1,6 +1,6 @@
 import logging
 import threading
-from typing import Annotated, Generator
+from typing import Annotated, Generator, cast
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -28,25 +28,33 @@ Rules:
 - If nothing important, return empty items"""
 
 
+class MetadataItem(BaseModel):
+    key: str
+    value: str
+
+
 class ExtractedMetadata(BaseModel):
-    data: dict[str, str] = Field(default_factory=dict)
+    items: list[MetadataItem] = Field(default_factory=list)
 
 
 def extract_metadata(conversation_id: int, user_message: str) -> None:
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     try:
         extractor = llm.with_structured_output(ExtractedMetadata)
-        result = extractor.invoke(
-            [
-                SystemMessage(content=EXTRACTION_SYSTEM_PROMPT),
-                HumanMessage(content=user_message),
-            ]
+        result = cast(
+            ExtractedMetadata,
+            extractor.invoke(
+                [
+                    SystemMessage(content=EXTRACTION_SYSTEM_PROMPT),
+                    HumanMessage(content=user_message),
+                ]
+            ),
         )
-        for key, value in result.data.items():
+        for item in result.items:
             ConversationMetadata.objects.update_or_create(
                 conversation_id=conversation_id,
-                key=key,
-                defaults={"value": value, "is_deleted": False},
+                key=item.key,
+                defaults={"value": item.value, "is_deleted": False},
             )
     except Exception:
         logger.error("metadata extraction failed", exc_info=True)
