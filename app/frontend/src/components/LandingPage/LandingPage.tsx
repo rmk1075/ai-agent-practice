@@ -2,8 +2,9 @@ import MessageInput from '../MessageInput/MessageInput'
 import styles from './LandingPage.module.css'
 
 interface LandingPageProps {
-  onSend: (content: string) => void
+  onSend: (content: string, file?: File) => void
   isStreaming: boolean
+  externalError?: string
 }
 
 const QUICK_ACTIONS = [
@@ -12,7 +13,7 @@ const QUICK_ACTIONS = [
   '내가 가진 계약서 업로드하기',
 ]
 
-export default function LandingPage({ onSend, isStreaming }: LandingPageProps) {
+export default function LandingPage({ onSend, isStreaming, externalError }: LandingPageProps) {
   return (
     <div className={styles.container}>
       <div className={styles.hero}>
@@ -20,7 +21,7 @@ export default function LandingPage({ onSend, isStreaming }: LandingPageProps) {
         <h1 className={styles.title}>AI 계약 어시스턴트</h1>
       </div>
       <div className={styles.inputWrapper}>
-        <MessageInput onSend={onSend} disabled={isStreaming} />
+        <MessageInput onSend={onSend} disabled={isStreaming} externalError={externalError} />
       </div>
       <div className={styles.actions}>
         {QUICK_ACTIONS.map((label) => (
