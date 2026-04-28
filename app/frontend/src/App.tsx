@@ -20,6 +20,7 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [externalError, setExternalError] = useState<string | undefined>(undefined)
   const activeConvIdRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -58,7 +59,8 @@ function App() {
     setSidebarOpen(false)
   }
 
-  const handleSend = async (content: string) => {
+  const handleSend = async (content: string, file?: File) => {
+    setExternalError(undefined)
     let convId = selectedDetail?.id
     if (!convId) {
       const name = `Conversation ${conversations.length + 1}`
@@ -76,7 +78,12 @@ function App() {
     if (activeConvIdRef.current === conversationId) {
       setMessages((prev) => [
         ...prev,
-        { id: Date.now(), role: 'user', content, created_at: new Date().toISOString() },
+        {
+          id: Date.now(),
+          role: 'user',
+          content: content || `[파일: ${file?.name}]`,
+          created_at: new Date().toISOString(),
+        },
       ])
     }
 
@@ -84,6 +91,7 @@ function App() {
     await streamConversationMessage(
       conversationId,
       content,
+      file,
       (token) => {
         aiContent += token
         if (activeConvIdRef.current !== conversationId) return
@@ -103,7 +111,8 @@ function App() {
           return copy
         })
       },
-      () => {}
+      () => {},
+      (message) => setExternalError(message)
     )
     setIsStreaming(false)
   }
@@ -121,9 +130,9 @@ function App() {
         onClose={() => setSidebarOpen(false)}
       />
       {messages.length === 0 ? (
-        <LandingPage onSend={handleSend} isStreaming={isStreaming} />
+        <LandingPage onSend={handleSend} isStreaming={isStreaming} externalError={externalError} />
       ) : (
-        <ChatView messages={messages} onSend={handleSend} isStreaming={isStreaming} />
+        <ChatView messages={messages} onSend={handleSend} isStreaming={isStreaming} externalError={externalError} />
       )}
     </>
   )

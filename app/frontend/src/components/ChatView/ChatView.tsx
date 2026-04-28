@@ -5,11 +5,12 @@ import styles from './ChatView.module.css'
 
 interface ChatViewProps {
   messages: Message[]
-  onSend: (content: string) => void
+  onSend: (content: string, file?: File) => void
   isStreaming: boolean
+  externalError?: string
 }
 
-export default function ChatView({ messages, onSend, isStreaming }: ChatViewProps) {
+export default function ChatView({ messages, onSend, isStreaming, externalError }: ChatViewProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export default function ChatView({ messages, onSend, isStreaming }: ChatViewProp
         <div ref={bottomRef} />
       </div>
       <div className={styles.inputArea}>
-        <MessageInput onSend={onSend} disabled={isStreaming} />
+        <MessageInput onSend={onSend} disabled={isStreaming} externalError={externalError} />
       </div>
     </div>
   )

@@ -19,4 +19,9 @@ describe('LandingPage', () => {
     render(<LandingPage onSend={vi.fn()} isStreaming={false} />)
     expect(screen.getByRole('textbox')).toBeInTheDocument()
   })
+
+  it('displays externalError passed from parent', () => {
+    render(<LandingPage onSend={vi.fn()} isStreaming={false} externalError="파일 크기 초과" />)
+    expect(screen.getByText('파일 크기 초과')).toBeInTheDocument()
+  })
 })

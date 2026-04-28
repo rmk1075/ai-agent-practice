@@ -3,16 +3,35 @@ const BASE_URL = "http://localhost:8000"
 export async function streamConversationMessage(
   conversationId: number,
   content: string,
+  file: File | undefined,
   onToken: (token: string) => void,
-  onDone: () => void
+  onDone: () => void,
+  onError: (message: string) => void
 ) {
+  const form = new FormData()
+  form.append('role', 'user')
+  if (content) form.append('content', content)  // empty string = file-only; don't send blank field
+  if (file) form.append('file', file)
+
   const res = await fetch(`${BASE_URL}/conversations/${conversationId}/messages/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role: "user", content }),
+    method: 'POST',
+    body: form,
   })
 
-  if (!res.ok || !res.body) throw new Error("Failed to stream message")
+  if (!res.ok) {
+    let message = 'Failed to send message.'
+    try {
+      const body = await res.json()
+      if (typeof body.error === 'string') message = body.error
+    } catch {}
+    onError(message)
+    return
+  }
+
+  if (!res.body) {
+    onError('No response body')
+    return
+  }
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -23,8 +42,8 @@ export async function streamConversationMessage(
     if (done) break
 
     buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
+    const lines = buffer.split("\n")
+    buffer = lines.pop() ?? ""
 
     for (const line of lines) {
       // \r 만 제거 (CRLF 대응). trim()은 토큰 내 trailing space까지 제거하므로 사용 안 함

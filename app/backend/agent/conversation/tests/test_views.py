@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 from conversation.models import Conversation, ConversationMetadata, Message
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -250,10 +251,6 @@ class ConversationMessagesViewTest(TestCase):
         response = self.client.post(self.url, {"content": "hello"}, format="json")
         self.assertEqual(response.status_code, 400)
 
-    def test_post_message_missing_content(self):
-        response = self.client.post(self.url, {"role": "user"}, format="json")
-        self.assertEqual(response.status_code, 400)
-
     def test_post_message_invalid_role(self):
         response = self.client.post(
             self.url, {"role": "invalid", "content": "hello"}, format="json"
@@ -367,3 +364,176 @@ class ConversationMessagesViewTest(TestCase):
 
         _, user_content, conversation_id = mock_graph.stream.call_args[0]
         self.assertEqual(conversation_id, self.conversation.id)
+
+    def test_post_message_no_content_no_file_returns_400(self):
+        response = self.client.post(self.url, {"role": "user"}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"], "Either content or file must be provided."
+        )
+
+    def test_post_message_whitespace_only_content_no_file_returns_400(self):
+        response = self.client.post(
+            self.url, {"role": "user", "content": "   "}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"], "Either content or file must be provided."
+        )
+
+    @patch("conversation.views.FileParser")
+    @patch("conversation.views.ConversationGraph")
+    def test_post_message_file_only_saves_parsed_content(
+        self, mock_graph_cls, mock_parser_cls
+    ):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
+        mock_parser = MagicMock()
+        mock_parser_cls.return_value = mock_parser
+        mock_parser.parse.return_value = "parsed file text"
+
+        pdf = SimpleUploadedFile("doc.pdf", b"%PDF-1.4", content_type="application/pdf")
+        response = self.client.post(
+            self.url, {"role": "user", "file": pdf}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 200)
+        b"".join(response.streaming_content)
+        self.assertTrue(
+            Message.objects.filter(
+                role="user",
+                content="[File: doc.pdf]\nparsed file text",
+                conversation=self.conversation,
+            ).exists()
+        )
+
+    @patch("conversation.views.FileParser")
+    @patch("conversation.views.ConversationGraph")
+    def test_post_message_docx_file_only_saves_parsed_content(
+        self, mock_graph_cls, mock_parser_cls
+    ):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
+        mock_parser = MagicMock()
+        mock_parser_cls.return_value = mock_parser
+        mock_parser.parse.return_value = "parsed docx text"
+
+        docx = SimpleUploadedFile(
+            "report.docx",
+            b"PK",
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        response = self.client.post(
+            self.url, {"role": "user", "file": docx}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 200)
+        b"".join(response.streaming_content)
+        self.assertTrue(
+            Message.objects.filter(
+                role="user",
+                content="[File: report.docx]\nparsed docx text",
+                conversation=self.conversation,
+            ).exists()
+        )
+
+    @patch("conversation.views.FileParser")
+    @patch("conversation.views.ConversationGraph")
+    def test_post_message_content_and_file_merges_both(
+        self, mock_graph_cls, mock_parser_cls
+    ):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
+        mock_parser = MagicMock()
+        mock_parser_cls.return_value = mock_parser
+        mock_parser.parse.return_value = "parsed file text"
+
+        pdf = SimpleUploadedFile("doc.pdf", b"%PDF-1.4", content_type="application/pdf")
+        response = self.client.post(
+            self.url,
+            {"role": "user", "content": "my question", "file": pdf},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200)
+        b"".join(response.streaming_content)
+        self.assertTrue(
+            Message.objects.filter(
+                role="user",
+                content="my question\n\n[File: doc.pdf]\nparsed file text",
+                conversation=self.conversation,
+            ).exists()
+        )
+
+    @patch("conversation.views.FileParser")
+    def test_post_message_unsupported_file_type_returns_400(self, mock_parser_cls):
+        from conversation.file_parser import UnsupportedFileTypeError
+
+        mock_parser = MagicMock()
+        mock_parser_cls.return_value = mock_parser
+        mock_parser.parse.side_effect = UnsupportedFileTypeError("unsupported")
+
+        txt = SimpleUploadedFile("doc.txt", b"hello", content_type="text/plain")
+        response = self.client.post(
+            self.url, {"role": "user", "file": txt}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"],
+            "Unsupported file type. Only PDF and DOCX are allowed.",
+        )
+
+    @patch("conversation.views.FileParser")
+    def test_post_message_file_too_large_returns_400(self, mock_parser_cls):
+        from conversation.file_parser import FileTooLargeError
+
+        mock_parser = MagicMock()
+        mock_parser_cls.return_value = mock_parser
+        mock_parser.parse.side_effect = FileTooLargeError("too large")
+
+        pdf = SimpleUploadedFile("big.pdf", b"x", content_type="application/pdf")
+        response = self.client.post(
+            self.url, {"role": "user", "file": pdf}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"], "File size exceeds limit of 10MB."
+        )
+
+    @patch("conversation.views.FileParser")
+    def test_post_message_parse_failure_returns_400(self, mock_parser_cls):
+        from conversation.file_parser import FileParseError
+
+        mock_parser = MagicMock()
+        mock_parser_cls.return_value = mock_parser
+        mock_parser.parse.side_effect = FileParseError("failed")
+
+        pdf = SimpleUploadedFile("bad.pdf", b"corrupt", content_type="application/pdf")
+        response = self.client.post(
+            self.url, {"role": "user", "file": pdf}, format="multipart"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["error"], "Failed to parse file.")
+
+    @patch("conversation.views.FileParser")
+    @patch("conversation.views.ConversationGraph")
+    def test_post_message_merged_content_passed_to_stream(
+        self, mock_graph_cls, mock_parser_cls
+    ):
+        mock_graph = MagicMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_graph.stream.return_value = iter([])
+        mock_parser = MagicMock()
+        mock_parser_cls.return_value = mock_parser
+        mock_parser.parse.return_value = "file content"
+
+        pdf = SimpleUploadedFile("doc.pdf", b"%PDF-1.4", content_type="application/pdf")
+        response = self.client.post(
+            self.url,
+            {"role": "user", "content": "question", "file": pdf},
+            format="multipart",
+        )
+        b"".join(response.streaming_content)
+
+        _, user_content, _ = mock_graph.stream.call_args[0]
+        self.assertEqual(user_content, "question\n\n[File: doc.pdf]\nfile content")
