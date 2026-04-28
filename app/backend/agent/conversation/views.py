@@ -5,6 +5,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from conversation.file_parser import (
+    FileParseError,
+    FileParser,
+    FileTooLargeError,
+    UnsupportedFileTypeError,
+)
 from conversation.models import Conversation, Message
 from conversation.serializers import (
     ConversationDetailSerializer,
@@ -123,7 +129,42 @@ class ConversationMessagesView(APIView):
                 {"error": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND
             )
 
-        serializer = MessageSerializer(data=request.data)
+        content = request.data.get("content", "").strip()
+        file = request.FILES.get("file")
+
+        if not content and file is None:
+            return Response(
+                {"error": "Either content or file must be provided."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if file is not None:
+            try:
+                parsed_text = FileParser().parse(file)
+            except FileTooLargeError:
+                return Response(
+                    {"error": "File size exceeds limit of 10MB."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            except UnsupportedFileTypeError:
+                return Response(
+                    {"error": "Unsupported file type. Only PDF and DOCX are allowed."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            except FileParseError:
+                return Response(
+                    {"error": "Failed to parse file."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            safe_name = file.name.replace("\n", " ").replace("]", "")
+            file_section = f"[File: {safe_name}]\n{parsed_text}"
+            merged_content = f"{content}\n\n{file_section}" if content else file_section
+        else:
+            merged_content = content
+
+        serializer = MessageSerializer(
+            data={"role": request.data.get("role"), "content": merged_content}
+        )
         serializer.is_valid(raise_exception=True)
         user_message = serializer.save(conversation_id=conversation_id)
 
