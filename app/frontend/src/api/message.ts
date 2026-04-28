@@ -59,7 +59,14 @@ export async function streamConversationMessage(
         return
       }
 
-      if (data) onToken(data)
+      if (data) {
+        try {
+          const token = JSON.parse(data)
+          if (typeof token === 'string') onToken(token)
+        } catch {
+          onToken(data)
+        }
+      }
     }
   }
 }
