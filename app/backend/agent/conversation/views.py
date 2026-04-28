@@ -1,5 +1,6 @@
 import os
 
+from django.db import transaction
 from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.response import Response
@@ -11,7 +12,7 @@ from conversation.file_parser import (
     FileTooLargeError,
     UnsupportedFileTypeError,
 )
-from conversation.models import Conversation, Message
+from conversation.models import Conversation, ConversationMessageFile, Message
 from conversation.serializers import (
     ConversationDetailSerializer,
     ConversationSerializer,
@@ -93,10 +94,10 @@ class ConversationMessagesView(APIView):
             .order_by("-created_at")[:HISTORY_LIMIT]
         )[::-1]
 
-    def _stream_response(self, conversation_id, graph, history, user_message):
+    def _stream_response(self, conversation_id, graph, history, user_message: str):
         ai_content = ""
         try:
-            for delta in graph.stream(history, user_message.content, conversation_id):
+            for delta in graph.stream(history, user_message, conversation_id):
                 ai_content += delta
                 yield f"data: {delta}\n\n".encode()
         except Exception:
@@ -131,6 +132,7 @@ class ConversationMessagesView(APIView):
 
         content = request.data.get("content", "").strip()
         file = request.FILES.get("file")
+        path = request.data.get("path")
 
         if not content and file is None:
             return Response(
@@ -138,7 +140,14 @@ class ConversationMessagesView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if file is not None:
+        if file and not path:
+            return Response(
+                {"error": "path is required when file is provided."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        llm_content = content
+        if file:
             try:
                 parsed_text = FileParser().parse(file)
             except FileTooLargeError:
@@ -158,15 +167,21 @@ class ConversationMessagesView(APIView):
                 )
             safe_name = file.name.replace("\n", " ").replace("]", "")
             file_section = f"[File: {safe_name}]\n{parsed_text}"
-            merged_content = f"{content}\n\n{file_section}" if content else file_section
-        else:
-            merged_content = content
+            llm_content = f"{content}\n\n{file_section}" if content else file_section
 
         serializer = MessageSerializer(
-            data={"role": request.data.get("role"), "content": merged_content}
+            data={"role": request.data.get("role"), "content": content}
         )
         serializer.is_valid(raise_exception=True)
-        user_message = serializer.save(conversation_id=conversation_id)
+
+        with transaction.atomic():
+            user_message = serializer.save(conversation_id=conversation_id)
+            if file:
+                ConversationMessageFile.objects.create(
+                    message=user_message,
+                    filename=file.name,
+                    path=path,
+                )
 
         graph = ConversationGraph(
             model=conversation.model,
@@ -175,6 +190,6 @@ class ConversationMessagesView(APIView):
         )
         history = self._get_history(conversation_id, exclude_id=user_message.id)
         return StreamingHttpResponse(
-            self._stream_response(conversation_id, graph, history, user_message),
+            self._stream_response(conversation_id, graph, history, llm_content),
             content_type="text/event-stream",
         )

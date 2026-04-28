@@ -395,14 +395,14 @@ class ConversationMessagesViewTest(TestCase):
 
         pdf = SimpleUploadedFile("doc.pdf", b"%PDF-1.4", content_type="application/pdf")
         response = self.client.post(
-            self.url, {"role": "user", "file": pdf}, format="multipart"
+            self.url, {"role": "user", "file": pdf, "path": "test-uuid-pdf"}, format="multipart"
         )
         self.assertEqual(response.status_code, 200)
         b"".join(response.streaming_content)
         self.assertTrue(
             Message.objects.filter(
                 role="user",
-                content="[File: doc.pdf]\nparsed file text",
+                content="",
                 conversation=self.conversation,
             ).exists()
         )
@@ -425,14 +425,14 @@ class ConversationMessagesViewTest(TestCase):
             content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
         response = self.client.post(
-            self.url, {"role": "user", "file": docx}, format="multipart"
+            self.url, {"role": "user", "file": docx, "path": "test-uuid-docx"}, format="multipart"
         )
         self.assertEqual(response.status_code, 200)
         b"".join(response.streaming_content)
         self.assertTrue(
             Message.objects.filter(
                 role="user",
-                content="[File: report.docx]\nparsed docx text",
+                content="",
                 conversation=self.conversation,
             ).exists()
         )
@@ -452,7 +452,7 @@ class ConversationMessagesViewTest(TestCase):
         pdf = SimpleUploadedFile("doc.pdf", b"%PDF-1.4", content_type="application/pdf")
         response = self.client.post(
             self.url,
-            {"role": "user", "content": "my question", "file": pdf},
+            {"role": "user", "content": "my question", "file": pdf, "path": "test-uuid-merge"},
             format="multipart",
         )
         self.assertEqual(response.status_code, 200)
@@ -460,7 +460,7 @@ class ConversationMessagesViewTest(TestCase):
         self.assertTrue(
             Message.objects.filter(
                 role="user",
-                content="my question\n\n[File: doc.pdf]\nparsed file text",
+                content="my question",
                 conversation=self.conversation,
             ).exists()
         )
@@ -475,7 +475,7 @@ class ConversationMessagesViewTest(TestCase):
 
         txt = SimpleUploadedFile("doc.txt", b"hello", content_type="text/plain")
         response = self.client.post(
-            self.url, {"role": "user", "file": txt}, format="multipart"
+            self.url, {"role": "user", "file": txt, "path": "test-uuid-unsupported"}, format="multipart"
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
@@ -493,7 +493,7 @@ class ConversationMessagesViewTest(TestCase):
 
         pdf = SimpleUploadedFile("big.pdf", b"x", content_type="application/pdf")
         response = self.client.post(
-            self.url, {"role": "user", "file": pdf}, format="multipart"
+            self.url, {"role": "user", "file": pdf, "path": "test-uuid-toolarge"}, format="multipart"
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
@@ -510,7 +510,7 @@ class ConversationMessagesViewTest(TestCase):
 
         pdf = SimpleUploadedFile("bad.pdf", b"corrupt", content_type="application/pdf")
         response = self.client.post(
-            self.url, {"role": "user", "file": pdf}, format="multipart"
+            self.url, {"role": "user", "file": pdf, "path": "test-uuid-parsefail"}, format="multipart"
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "Failed to parse file.")
@@ -530,10 +530,91 @@ class ConversationMessagesViewTest(TestCase):
         pdf = SimpleUploadedFile("doc.pdf", b"%PDF-1.4", content_type="application/pdf")
         response = self.client.post(
             self.url,
-            {"role": "user", "content": "question", "file": pdf},
+            {"role": "user", "content": "question", "file": pdf, "path": "test-uuid-stream"},
             format="multipart",
         )
         b"".join(response.streaming_content)
 
         _, user_content, _ = mock_graph.stream.call_args[0]
         self.assertEqual(user_content, "question\n\n[File: doc.pdf]\nfile content")
+
+    def test_post_with_file_but_no_path_returns_400(self):
+        pdf_content = b"%PDF-1.4 1 0 obj<</Type/Catalog>>endobj"
+        file = SimpleUploadedFile("test.pdf", pdf_content, content_type="application/pdf")
+        data = {"role": "user", "content": "analyze this", "file": file}
+        response = self.client.post(self.url, data=data, format="multipart")
+        self.assertEqual(response.status_code, 400)
+
+    @patch("conversation.views.FileParser")
+    @patch("conversation.views.ConversationGraph")
+    def test_post_with_file_stores_only_user_text_in_message_content(self, MockGraph, MockParser):
+        MockGraph.return_value.stream.return_value = iter(["ok"])
+        MockParser.return_value.parse.return_value = "parsed content"
+        pdf_content = b"%PDF-1.4 1 0 obj<</Type/Catalog>>endobj"
+        file = SimpleUploadedFile("test.pdf", pdf_content, content_type="application/pdf")
+        data = {
+            "role": "user",
+            "content": "analyze this",
+            "file": file,
+            "path": "test-uuid-001",
+        }
+        self.client.post(self.url, data=data, format="multipart")
+        message = Message.objects.filter(role="user").last()
+        self.assertEqual(message.content, "analyze this")
+        self.assertNotIn("[File:", message.content)
+
+    @patch("conversation.views.FileParser")
+    @patch("conversation.views.ConversationGraph")
+    def test_post_with_file_creates_conversation_message_file(self, MockGraph, MockParser):
+        from conversation.models import ConversationMessageFile
+        MockGraph.return_value.stream.return_value = iter(["ok"])
+        MockParser.return_value.parse.return_value = "parsed content"
+        pdf_content = b"%PDF-1.4 1 0 obj<</Type/Catalog>>endobj"
+        file = SimpleUploadedFile("test.pdf", pdf_content, content_type="application/pdf")
+        data = {
+            "role": "user",
+            "content": "analyze this",
+            "file": file,
+            "path": "test-uuid-002",
+        }
+        self.client.post(self.url, data=data, format="multipart")
+        message = Message.objects.filter(role="user").last()
+        cmf = ConversationMessageFile.objects.get(message=message)
+        self.assertEqual(cmf.filename, "test.pdf")
+        self.assertEqual(cmf.path, "test-uuid-002")
+
+    @patch("conversation.views.FileParser")
+    @patch("conversation.views.ConversationGraph")
+    def test_post_file_only_with_no_content_saves_empty_string(self, MockGraph, MockParser):
+        MockGraph.return_value.stream.return_value = iter(["ok"])
+        MockParser.return_value.parse.return_value = "parsed content"
+        pdf_content = b"%PDF-1.4 1 0 obj<</Type/Catalog>>endobj"
+        file = SimpleUploadedFile("test.pdf", pdf_content, content_type="application/pdf")
+        data = {"role": "user", "file": file, "path": "test-uuid-003"}
+        self.client.post(self.url, data=data, format="multipart")
+        message = Message.objects.filter(role="user").last()
+        self.assertEqual(message.content, "")
+
+    def test_get_messages_includes_file_info_when_file_attached(self):
+        from conversation.models import ConversationMessageFile
+        message = Message.objects.create(
+            conversation=self.conversation, role="user", content="analyze this"
+        )
+        ConversationMessageFile.objects.create(
+            message=message, filename="doc.pdf", path="uuid-abc-123"
+        )
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        user_msg = next(m for m in response.data if m["role"] == "user")
+        self.assertIsNotNone(user_msg["file"])
+        self.assertEqual(user_msg["file"]["filename"], "doc.pdf")
+        self.assertEqual(user_msg["file"]["path"], "uuid-abc-123")
+
+    def test_get_messages_file_is_null_when_no_file_attached(self):
+        Message.objects.create(
+            conversation=self.conversation, role="user", content="hello"
+        )
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        user_msg = next(m for m in response.data if m["role"] == "user")
+        self.assertIsNone(user_msg["file"])
