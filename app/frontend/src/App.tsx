@@ -8,6 +8,7 @@ import {
   deleteConversation,
 } from './api/conversations'
 import type { Conversation, ConversationDetail, Message } from './api/conversations'
+import { saveFile, deleteFile } from './lib/fileStorage'
 import Header from './components/Header/Header'
 import Sidebar from './components/Sidebar/Sidebar'
 import LandingPage from './components/LandingPage/LandingPage'
@@ -73,6 +74,9 @@ function App() {
     }
 
     const conversationId = convId
+    const path = file ? crypto.randomUUID() : undefined
+    if (file && path) await saveFile(path, file)
+
     setIsStreaming(true)
 
     if (activeConvIdRef.current === conversationId) {
@@ -81,7 +85,8 @@ function App() {
         {
           id: Date.now(),
           role: 'user',
-          content: content || `[파일: ${file?.name}]`,
+          content,
+          file: file && path ? { id: 0, filename: file.name, path } : null,
           created_at: new Date().toISOString(),
         },
       ])
@@ -92,6 +97,7 @@ function App() {
       conversationId,
       content,
       file,
+      path,
       (token) => {
         aiContent += token
         if (activeConvIdRef.current !== conversationId) return
@@ -105,6 +111,7 @@ function App() {
               id: Date.now() + 1,
               role: 'assistant',
               content: aiContent,
+              file: null,
               created_at: new Date().toISOString(),
             })
           }
@@ -112,7 +119,10 @@ function App() {
         })
       },
       () => {},
-      (message) => setExternalError(message)
+      async (message) => {
+        if (path) await deleteFile(path)
+        setExternalError(message)
+      }
     )
     setIsStreaming(false)
   }

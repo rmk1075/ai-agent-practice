@@ -40,3 +40,30 @@
   padding: 16px 24px;
   border-top: 1px solid var(--color-border);
 }
+
+.fileCard {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  max-width: 100%;
+}
+
+.fileCard:hover {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.fileIcon {
+  flex-shrink: 0;
+}
+
+.fileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
