@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from conversation.models import Conversation, ConversationMetadata, Message
+from conversation.models import Conversation, ConversationMessageFile, ConversationMetadata, Message
 
 
 class ConversationMetadataSerializer(serializers.ModelSerializer):
@@ -9,10 +9,18 @@ class ConversationMetadataSerializer(serializers.ModelSerializer):
         fields = ["key", "value"]
 
 
+class ConversationMessageFileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConversationMessageFile
+        fields = ["id", "filename", "path"]
+
+
 class MessageSerializer(serializers.ModelSerializer):
+    file = ConversationMessageFileSerializer(read_only=True, default=None)
+
     class Meta:
         model = Message
-        fields = ["id", "role", "content", "created_at"]
+        fields = ["id", "role", "content", "file", "created_at"]
 
 
 class ConversationSerializer(serializers.ModelSerializer):

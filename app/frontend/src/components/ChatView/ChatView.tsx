@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
-import type { Message } from '../../api/conversations'
+import type { Message, MessageFile } from '../../api/conversations'
+import { getFile } from '../../lib/fileStorage'
 import MessageInput from '../MessageInput/MessageInput'
 import styles from './ChatView.module.css'
 
@@ -8,6 +9,27 @@ interface ChatViewProps {
   onSend: (content: string, file?: File) => void
   isStreaming: boolean
   externalError?: string
+}
+
+function FileCard({ fileInfo }: { fileInfo: MessageFile }) {
+  const handleClick = async () => {
+    const file = await getFile(fileInfo.path)
+    if (!file) return
+    const url = URL.createObjectURL(file)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileInfo.filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className={styles.fileCard} onClick={handleClick} role="button" tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && handleClick()}>
+      <span className={styles.fileIcon}>📎</span>
+      <span className={styles.fileName}>{fileInfo.filename}</span>
+    </div>
+  )
 }
 
 export default function ChatView({ messages, onSend, isStreaming, externalError }: ChatViewProps) {
@@ -27,6 +49,7 @@ export default function ChatView({ messages, onSend, isStreaming, externalError 
             key={m.id}
             className={`${styles.bubble} ${m.role === 'user' ? styles.userBubble : styles.aiBubble}`}
           >
+            {m.file && <FileCard fileInfo={m.file} />}
             {m.content}
           </div>
         ))}

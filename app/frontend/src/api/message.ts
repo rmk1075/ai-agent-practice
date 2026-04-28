@@ -4,14 +4,16 @@ export async function streamConversationMessage(
   conversationId: number,
   content: string,
   file: File | undefined,
+  path: string | undefined,
   onToken: (token: string) => void,
   onDone: () => void,
   onError: (message: string) => void
 ) {
   const form = new FormData()
   form.append('role', 'user')
-  if (content) form.append('content', content)  // empty string = file-only; don't send blank field
+  if (content) form.append('content', content)
   if (file) form.append('file', file)
+  if (path) form.append('path', path)
 
   const res = await fetch(`${BASE_URL}/conversations/${conversationId}/messages/`, {
     method: 'POST',

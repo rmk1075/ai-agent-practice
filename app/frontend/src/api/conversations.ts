@@ -16,10 +16,17 @@ export interface ConversationDetail extends Conversation {
   metadata: ConversationMetadata[]
 }
 
+export interface MessageFile {
+  id: number
+  filename: string
+  path: string
+}
+
 export interface Message {
   id: number
   role: "user" | "assistant" | "system"
   content: string
+  file: MessageFile | null
   created_at: string
 }
 
