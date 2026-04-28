@@ -234,8 +234,14 @@ class ExtractMetadataTest(TestCase):
         mock_extractor = MagicMock()
         mock_llm.with_structured_output.return_value = mock_extractor
 
+        item1 = MagicMock()
+        item1.key = "user_name"
+        item1.value = "John"
+        item2 = MagicMock()
+        item2.key = "occupation"
+        item2.value = "lawyer"
         extracted = MagicMock()
-        extracted.data = {"user_name": "John", "occupation": "lawyer"}
+        extracted.items = [item1, item2]
         mock_extractor.invoke.return_value = extracted
 
         conv = Conversation.objects.create(name="test")
@@ -255,8 +261,11 @@ class ExtractMetadataTest(TestCase):
         mock_extractor = MagicMock()
         mock_llm.with_structured_output.return_value = mock_extractor
 
+        item = MagicMock()
+        item.key = "user_name"
+        item.value = "Jane"
         extracted = MagicMock()
-        extracted.data = {"user_name": "Jane"}
+        extracted.items = [item]
         mock_extractor.invoke.return_value = extracted
 
         conv = Conversation.objects.create(name="test")
@@ -279,7 +288,7 @@ class ExtractMetadataTest(TestCase):
         mock_llm.with_structured_output.return_value = mock_extractor
 
         extracted = MagicMock()
-        extracted.data = {}
+        extracted.items = []
         mock_extractor.invoke.return_value = extracted
 
         conv = Conversation.objects.create(name="test")
@@ -329,8 +338,11 @@ class ExtractMetadataTest(TestCase):
         mock_extractor = MagicMock()
         mock_llm.with_structured_output.return_value = mock_extractor
 
+        item = MagicMock()
+        item.key = "user_name"
+        item.value = "Alice"
         extracted = MagicMock()
-        extracted.data = {"user_name": "Alice"}
+        extracted.items = [item]
         mock_extractor.invoke.return_value = extracted
 
         conv = Conversation.objects.create(name="test")
