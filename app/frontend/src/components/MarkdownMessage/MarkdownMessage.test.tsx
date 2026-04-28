@@ -33,4 +33,27 @@ describe('MarkdownMessage', () => {
     render(<MarkdownMessage content="hello world" />)
     expect(screen.getByText('hello world')).toBeInTheDocument()
   })
+
+  it('renders single newline as a line break', () => {
+    const { container } = render(<MarkdownMessage content={"line one\nline two"} />)
+    expect(container.querySelector('br')).toBeInTheDocument()
+  })
+
+  describe('streaming partial content', () => {
+    it('renders an unclosed code block as a code block', () => {
+      render(<MarkdownMessage content={"```js\nconsole.log('hello'"} />)
+      expect(document.querySelector('code.language-js')).toBeInTheDocument()
+    })
+
+    it('does not modify a properly closed code block', () => {
+      render(<MarkdownMessage content={"```js\nconsole.log('hello')\n```"} />)
+      expect(document.querySelector('code.language-js')).toBeInTheDocument()
+    })
+
+    it('handles text after a closed code block without modification', () => {
+      render(<MarkdownMessage content={"```js\nfoo()\n```\nsome text after"} />)
+      expect(document.querySelector('code.language-js')).toBeInTheDocument()
+      expect(screen.getByText('some text after')).toBeInTheDocument()
+    })
+  })
 })
