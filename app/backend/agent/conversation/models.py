@@ -27,8 +27,16 @@ class Role(models.TextChoices):
 
 class Message(BaseModel):
     role = models.CharField(max_length=255, choices=Role.choices)
-    content = models.TextField()
+    content = models.TextField(blank=True, default="")
 
     conversation = models.ForeignKey(
         Conversation, on_delete=models.CASCADE, related_name="messages"
     )
+
+
+class ConversationMessageFile(BaseModel):
+    message = models.OneToOneField(
+        Message, on_delete=models.CASCADE, related_name="file"
+    )
+    filename = models.CharField(max_length=255)
+    path = models.CharField(max_length=255)
