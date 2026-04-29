@@ -111,9 +111,9 @@ function App() {
     navigate(`/conversations/${conv.id}`)
   }
 
-  const handleSend = async (content: string, file?: File) => {
+  const handleSend = async (content: string, file?: File, forceNew?: boolean) => {
     setExternalError(undefined)
-    let convId = selectedDetail?.id
+    let convId = forceNew ? undefined : selectedDetail?.id
     if (!convId) {
       const name = `Conversation ${conversations.length + 1}`
       const created = await createConversation(name)
@@ -195,7 +195,7 @@ function App() {
         <Route
           path="/"
           element={
-            <LandingPage onSend={handleSend} isStreaming={isStreaming} externalError={externalError} />
+            <LandingPage onSend={(content, file) => handleSend(content, file, true)} isStreaming={isStreaming} externalError={externalError} />
           }
         />
         <Route
