@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import styles from './Header.module.css'
 
 interface HeaderProps {
@@ -14,10 +15,10 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
       >
         ☰
       </button>
-      <div className={styles.title}>
+      <Link to="/" className={styles.title}>
         <span className={styles.dot} />
         AI 계약 어시스턴트
-      </div>
+      </Link>
     </header>
   )
 }
