@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
 import { streamConversationMessage } from './api/message'
 import {
   fetchConversations,
@@ -15,7 +16,44 @@ import LandingPage from './components/LandingPage/LandingPage'
 import ChatView from './components/ChatView/ChatView'
 import './App.css'
 
+type ConversationRouteProps = {
+  messages: Message[]
+  selectedDetail: ConversationDetail | null
+  onSend: (content: string, file?: File) => Promise<void>
+  isStreaming: boolean
+  externalError: string | undefined
+  onLoadConversation: (convId: number) => Promise<void>
+}
+
+function ConversationRoute({
+  messages,
+  selectedDetail,
+  onSend,
+  isStreaming,
+  externalError,
+  onLoadConversation,
+}: ConversationRouteProps) {
+  const { id } = useParams()
+  const convId = Number(id)
+
+  useEffect(() => {
+    if (selectedDetail?.id !== convId) {
+      onLoadConversation(convId)
+    }
+  }, [convId])
+
+  return (
+    <ChatView
+      messages={messages}
+      onSend={onSend}
+      isStreaming={isStreaming}
+      externalError={externalError}
+    />
+  )
+}
+
 function App() {
+  const navigate = useNavigate()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedDetail, setSelectedDetail] = useState<ConversationDetail | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
@@ -28,6 +66,16 @@ function App() {
     fetchConversations().then(setConversations).catch(console.error)
   }, [])
 
+  const handleLoadConversation = async (convId: number) => {
+    activeConvIdRef.current = convId
+    const [detail, msgs] = await Promise.all([
+      fetchConversationDetail(convId),
+      fetchMessages(convId),
+    ])
+    setSelectedDetail(detail)
+    setMessages(msgs)
+  }
+
   const handleNewConversation = async () => {
     const name = `Conversation ${conversations.length + 1}`
     const created = await createConversation(name)
@@ -36,6 +84,7 @@ function App() {
     setSelectedDetail({ ...created, metadata: [] })
     setMessages([])
     setSidebarOpen(false)
+    navigate(`/conversations/${created.id}`)
   }
 
   const handleDeleteConversation = async (e: MouseEvent, convId: number) => {
@@ -46,6 +95,7 @@ function App() {
       activeConvIdRef.current = null
       setSelectedDetail(null)
       setMessages([])
+      navigate('/')
     }
   }
 
@@ -58,6 +108,7 @@ function App() {
     setSelectedDetail(detail)
     setMessages(msgs)
     setSidebarOpen(false)
+    navigate(`/conversations/${conv.id}`)
   }
 
   const handleSend = async (content: string, file?: File) => {
@@ -71,6 +122,7 @@ function App() {
       setSelectedDetail({ ...created, metadata: [] })
       setMessages([])
       convId = created.id
+      navigate(`/conversations/${created.id}`)
     }
 
     const conversationId = convId
@@ -139,11 +191,27 @@ function App() {
         onNewConversation={handleNewConversation}
         onClose={() => setSidebarOpen(false)}
       />
-      {messages.length === 0 ? (
-        <LandingPage onSend={handleSend} isStreaming={isStreaming} externalError={externalError} />
-      ) : (
-        <ChatView messages={messages} onSend={handleSend} isStreaming={isStreaming} externalError={externalError} />
-      )}
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <LandingPage onSend={handleSend} isStreaming={isStreaming} externalError={externalError} />
+          }
+        />
+        <Route
+          path="/conversations/:id"
+          element={
+            <ConversationRoute
+              messages={messages}
+              selectedDetail={selectedDetail}
+              onSend={handleSend}
+              isStreaming={isStreaming}
+              externalError={externalError}
+              onLoadConversation={handleLoadConversation}
+            />
+          }
+        />
+      </Routes>
     </>
   )
 }
