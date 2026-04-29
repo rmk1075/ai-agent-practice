@@ -3,6 +3,7 @@ import type { Message, MessageFile } from '../../api/conversations'
 import { getFile } from '../../lib/fileStorage'
 import MessageInput from '../MessageInput/MessageInput'
 import styles from './ChatView.module.css'
+import MarkdownMessage from '../MarkdownMessage/MarkdownMessage'
 
 interface ChatViewProps {
   messages: Message[]
@@ -50,7 +51,7 @@ export default function ChatView({ messages, onSend, isStreaming, externalError 
             className={`${styles.bubble} ${m.role === 'user' ? styles.userBubble : styles.aiBubble}`}
           >
             {m.file && <FileCard fileInfo={m.file} />}
-            {m.content}
+            <MarkdownMessage content={m.content} />
           </div>
         ))}
         <div ref={bottomRef} />

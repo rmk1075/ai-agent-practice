@@ -1,3 +1,4 @@
+import json
 import os
 
 from django.db import transaction
@@ -99,7 +100,7 @@ class ConversationMessagesView(APIView):
         try:
             for delta in graph.stream(history, user_message, conversation_id):
                 ai_content += delta
-                yield f"data: {delta}\n\n".encode()
+                yield f"data: {json.dumps(delta)}\n\n".encode()
         except Exception:
             if not ai_content:
                 ai_content = "[error]"

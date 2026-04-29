@@ -18,7 +18,7 @@ function makeTokenStream(token: string): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
   return new ReadableStream({
     start(controller) {
-      controller.enqueue(encoder.encode(`data: ${token}\n\n`))
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(token)}\n\n`))
       controller.enqueue(encoder.encode('data: [DONE]\n\n'))
       controller.close()
     },
@@ -90,6 +90,20 @@ describe('streamConversationMessage', () => {
     const onToken = vi.fn()
     await streamConversationMessage(1, 'prompt', undefined, undefined, onToken, vi.fn(), vi.fn())
     expect(onToken).toHaveBeenCalledWith('hello world')
+  })
+
+  it('calls onToken with newline token correctly', async () => {
+    mockFetch.mockResolvedValue({ ok: true, body: makeTokenStream('\n') })
+    const onToken = vi.fn()
+    await streamConversationMessage(1, 'prompt', undefined, undefined, onToken, vi.fn(), vi.fn())
+    expect(onToken).toHaveBeenCalledWith('\n')
+  })
+
+  it('calls onToken with token containing newline', async () => {
+    mockFetch.mockResolvedValue({ ok: true, body: makeTokenStream('line1\nline2') })
+    const onToken = vi.fn()
+    await streamConversationMessage(1, 'prompt', undefined, undefined, onToken, vi.fn(), vi.fn())
+    expect(onToken).toHaveBeenCalledWith('line1\nline2')
   })
 
   it('does not append content field when content is empty string', async () => {
