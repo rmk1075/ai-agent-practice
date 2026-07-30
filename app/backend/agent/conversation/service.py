@@ -1,7 +1,6 @@
 import logging
 import os
-import threading
-from typing import Annotated, Generator, cast
+from typing import Annotated, Generator
 
 from asgiref.sync import async_to_sync
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -12,7 +11,6 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
-from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from conversation.models import ConversationMetadata, Message
@@ -56,52 +54,6 @@ def get_mcp_tools() -> list[BaseTool]:
             logger.warning("failed to load MCP tools, chat runs without tools")
             return []
     return _mcp_tools
-
-
-EXTRACTION_SYSTEM_PROMPT = """You are an information extraction assistant.
-Analyze the user message and extract important personal info, preferences, or key facts/decisions.
-
-Extract:
-- Personal info: name, occupation, location, etc.
-- Preferences: language, communication style, interests
-- Key facts/decisions: project decisions, constraints, goals
-
-Rules:
-- Only extract clearly stated information (no inference)
-- Keys: concise English snake_case (e.g. "user_name", "preferred_language")
-- If nothing important, return empty items"""
-
-
-class MetadataItem(BaseModel):
-    key: str
-    value: str
-
-
-class ExtractedMetadata(BaseModel):
-    items: list[MetadataItem] = Field(default_factory=list)
-
-
-def extract_metadata(conversation_id: int, user_message: str) -> None:
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    try:
-        extractor = llm.with_structured_output(ExtractedMetadata)
-        result = cast(
-            ExtractedMetadata,
-            extractor.invoke(
-                [
-                    SystemMessage(content=EXTRACTION_SYSTEM_PROMPT),
-                    HumanMessage(content=user_message),
-                ]
-            ),
-        )
-        for item in result.items:
-            ConversationMetadata.objects.update_or_create(
-                conversation_id=conversation_id,
-                key=item.key,
-                defaults={"value": item.value, "is_deleted": False},
-            )
-    except Exception:
-        logger.error("metadata extraction failed", exc_info=True)
 
 
 class ConversationState(TypedDict):
@@ -187,11 +139,3 @@ class ConversationGraph:
             # ToolMessage 등 비-AI 메시지가 사용자 화면으로 새지 않도록 거른다
             if isinstance(chunk, AIMessage) and chunk.content:
                 yield chunk.content
-
-        # best-effort: runs only when generator fully exhausted; skipped on early close (e.g. client disconnect mid-stream)
-        t = threading.Thread(
-            target=extract_metadata,
-            args=(conversation_id, user_message),
-            daemon=True,
-        )
-        t.start()
