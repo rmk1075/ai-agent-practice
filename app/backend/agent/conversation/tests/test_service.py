@@ -1,8 +1,17 @@
 from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
+from langchain_core.tools import StructuredTool
+from langchain_core.tools import tool as lc_tool
 
+from conversation import service
 from conversation.models import Conversation, ConversationMetadata, Message
 from conversation.service import ConversationGraph, extract_metadata
 
@@ -91,7 +100,7 @@ class ConversationGraphChatbotNodeTest(TestCase):
             "messages": [HumanMessage(content="hello")],
             "metadata_context": "\n\nContext:\n- role: Lawyer",
         }
-        graph._chatbot_node(state)
+        graph._chatbot_node(state, {"configurable": {"conversation_id": 1}})
 
         call_args = mock_llm.invoke.call_args[0][0]
         self.assertIsInstance(call_args[0], SystemMessage)
@@ -114,7 +123,7 @@ class ConversationGraphChatbotNodeTest(TestCase):
             "messages": [HumanMessage(content="hello")],
             "metadata_context": "",
         }
-        graph._chatbot_node(state)
+        graph._chatbot_node(state, {"configurable": {"conversation_id": 1}})
 
         call_args = mock_llm.invoke.call_args[0][0]
         self.assertIsInstance(call_args[0], SystemMessage)
@@ -127,12 +136,9 @@ class ConversationGraphStreamTest(TestCase):
         mock_llm = MagicMock()
         mock_llm_cls.return_value = mock_llm
 
-        chunk1 = MagicMock()
-        chunk1.content = "Hello"
-        chunk2 = MagicMock()
-        chunk2.content = " world"
-        empty_chunk = MagicMock()
-        empty_chunk.content = ""
+        chunk1 = AIMessageChunk(content="Hello")
+        chunk2 = AIMessageChunk(content=" world")
+        empty_chunk = AIMessageChunk(content="")
 
         graph = ConversationGraph(
             model="gpt-4o-mini",
@@ -159,8 +165,7 @@ class ConversationGraphStreamTest(TestCase):
             system_prompt="You are a helpful assistant.",
         )
 
-        empty = MagicMock()
-        empty.content = ""
+        empty = AIMessageChunk(content="")
 
         with patch.object(graph._graph, "stream", return_value=iter([(empty, {})])):
             result = list(graph.stream([], "hi", 0))
@@ -399,8 +404,7 @@ class ConversationGraphStreamThreadTest(TestCase):
             system_prompt="Be helpful.",
         )
 
-        chunk = MagicMock()
-        chunk.content = "Hello"
+        chunk = AIMessageChunk(content="Hello")
 
         with patch.object(graph._graph, "stream", return_value=iter([(chunk, {})])):
             gen = graph.stream([], "I'm Alice, a doctor.", 42)
@@ -408,3 +412,168 @@ class ConversationGraphStreamThreadTest(TestCase):
             gen.close()  # close before exhaustion
 
         mock_thread.start.assert_not_called()
+
+
+class GetMcpToolsTest(TestCase):
+    def tearDown(self):
+        service._mcp_tools = None
+
+    @patch("conversation.service.MultiServerMCPClient")
+    def test_returns_empty_list_when_server_unreachable(self, mock_client_cls):
+        service._mcp_tools = None
+        mock_client_cls.side_effect = Exception("connection refused")
+
+        self.assertEqual(service.get_mcp_tools(), [])
+
+    @patch("conversation.service.MultiServerMCPClient")
+    def test_wraps_async_tools_with_sync_func_and_caches(self, mock_client_cls):
+        service._mcp_tools = None
+
+        async def acall() -> str:
+            return "ok"
+
+        mcp_tool = StructuredTool(
+            name="probe",
+            description="probe",
+            coroutine=acall,
+            args_schema={"type": "object", "properties": {}},
+        )
+
+        async def fake_get_tools():
+            return [mcp_tool]
+
+        mock_client_cls.return_value.get_tools = fake_get_tools
+
+        tools = service.get_mcp_tools()
+
+        self.assertEqual(len(tools), 1)
+        self.assertIsNotNone(tools[0].func)
+        self.assertEqual(tools[0].func(), "ok")
+
+        service.get_mcp_tools()
+        self.assertEqual(mock_client_cls.call_count, 1)
+
+
+class ConversationGraphToolLoopTest(TestCase):
+    def _tool_call_message(self):
+        return AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "save_memory",
+                    "args": {
+                        "conversation_id": 42,
+                        "key": "user_name",
+                        "value": "John",
+                    },
+                    "id": "call_1",
+                    "type": "tool_call",
+                }
+            ],
+        )
+
+    @patch("conversation.service.ChatOpenAI")
+    def test_graph_executes_tool_call_and_returns_final_answer(self, mock_llm_cls):
+        calls = []
+
+        @lc_tool
+        def save_memory(conversation_id: int, key: str, value: str) -> str:
+            """Save a memory."""
+            calls.append((conversation_id, key, value))
+            return "saved"
+
+        bound_llm = MagicMock()
+        bound_llm.invoke.side_effect = [
+            self._tool_call_message(),
+            AIMessage(content="done"),
+        ]
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = bound_llm
+        mock_llm_cls.return_value = mock_llm
+
+        conv = Conversation.objects.create(name="test")
+        graph = ConversationGraph(
+            model="gpt-4o-mini",
+            temperature=0.7,
+            system_prompt="You are helpful.",
+            tools=[save_memory],
+        )
+
+        result = graph._graph.invoke(
+            {"messages": [HumanMessage(content="I'm John")], "metadata_context": ""},
+            config={"configurable": {"conversation_id": conv.id}},
+        )
+
+        self.assertEqual(calls, [(42, "user_name", "John")])
+        self.assertEqual(result["messages"][-1].content, "done")
+
+    @patch("conversation.service.ChatOpenAI")
+    def test_chatbot_node_includes_tool_guidance_with_conversation_id(
+        self, mock_llm_cls
+    ):
+        @lc_tool
+        def save_memory(conversation_id: int, key: str, value: str) -> str:
+            """Save a memory."""
+            return "saved"
+
+        bound_llm = MagicMock()
+        bound_llm.invoke.return_value = AIMessage(content="hi")
+        mock_llm = MagicMock()
+        mock_llm.bind_tools.return_value = bound_llm
+        mock_llm_cls.return_value = mock_llm
+
+        graph = ConversationGraph(
+            model="gpt-4o-mini",
+            temperature=0.7,
+            system_prompt="You are helpful.",
+            tools=[save_memory],
+        )
+        graph._chatbot_node(
+            {"messages": [HumanMessage(content="hello")], "metadata_context": ""},
+            {"configurable": {"conversation_id": 42}},
+        )
+
+        prompt = bound_llm.invoke.call_args[0][0][0].content
+        self.assertIn("conversation_id is 42", prompt)
+        self.assertIn("save_memory", prompt)
+
+    @patch("conversation.service.ChatOpenAI")
+    def test_chatbot_node_omits_tool_guidance_without_tools(self, mock_llm_cls):
+        mock_llm = MagicMock()
+        mock_llm.invoke.return_value = AIMessage(content="hi")
+        mock_llm_cls.return_value = mock_llm
+
+        graph = ConversationGraph(
+            model="gpt-4o-mini",
+            temperature=0.7,
+            system_prompt="You are helpful.",
+        )
+        graph._chatbot_node(
+            {"messages": [HumanMessage(content="hello")], "metadata_context": ""},
+            {"configurable": {"conversation_id": 42}},
+        )
+
+        prompt = mock_llm.invoke.call_args[0][0][0].content
+        self.assertEqual(prompt, "You are helpful.")
+
+    @patch("conversation.service.ChatOpenAI")
+    def test_stream_skips_tool_messages(self, mock_llm_cls):
+        mock_llm_cls.return_value = MagicMock()
+
+        graph = ConversationGraph(
+            model="gpt-4o-mini",
+            temperature=0.7,
+            system_prompt="You are helpful.",
+        )
+
+        tool_msg = ToolMessage(content="saved: user_name", tool_call_id="call_1")
+        ai_chunk = AIMessageChunk(content="Hello")
+
+        with patch.object(
+            graph._graph,
+            "stream",
+            return_value=iter([(tool_msg, {}), (ai_chunk, {})]),
+        ):
+            result = list(graph.stream([], "hi", 0))
+
+        self.assertEqual(result, ["Hello"])
