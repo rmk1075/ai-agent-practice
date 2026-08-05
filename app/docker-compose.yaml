@@ -9,6 +9,7 @@ services:
       - ./backend:/app
     ports:
       - "8000:8000"
+      - "8001:8001"
     entrypoint: ["tail", "-f", "/dev/null"] # Dev
   frontend:
     image: ai-agent-frontend
